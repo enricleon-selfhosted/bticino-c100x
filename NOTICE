@@ -1,0 +1,57 @@
+This project is distributed under the GPL version 2 or later. The licence text is in
+LICENSE.
+
+GPL-2 is not a free choice here: fwz compiles lwext4 into itself, and lwext4 is GPL-2, so
+anything built from it inherits that.
+
+
+BUNDLED IN THIS REPOSITORY
+
+  lwext4            GPL-2         github.com/gkostka/lwext4
+                    reads and writes ext4 without a kernel. Compiled into fwz, with one
+                    local fix in tools/fwz/patches/
+  miniz             MIT           github.com/richgel999/miniz
+                    deflate, inflate and crc32. Compiled into fwz
+  speex 1.2.1       BSD-3-Clause  xiph.org
+                    the codec the intercom's telephony speaks. Sources vendored at
+                    tools/ffmpeg-speex/vendor/speex with their COPYING, compiled into
+                    ffmpeg-speex
+  c300x-controller  Apache-2.0    github.com/slyoldfox/c300x-controller
+                    the program that runs on the intercom. Shipped already built at
+                    device/controller/bundle.js, from tag v2024.9.1 with the patches in
+                    device/patches/
+
+
+REDISTRIBUTED IN THIS PROJECT'S RELEASES
+
+Copies of upstream files, byte for byte, because they go inside the firmware this project
+builds. Each is verified against a pinned sha256 before use.
+
+  node 17.9.1       MIT           nodejs.org
+  go2rtc 1.9.14     MIT           github.com/AlexxIT/go2rtc
+  libatomic         GPL-3 + runtime exception, from the c300x-controller repository
+
+
+DOWNLOADED WHEN BUILDING FROM SOURCE
+
+Fetched against a pinned sha256, and needed only to build ffmpeg-speex.
+
+  zig 0.16.0        MIT           ziglang.org
+  ffmpeg 7.0.2      LGPL-2.1+     github.com/FFmpeg/FFmpeg at tag n7.0.2, unmodified
+
+
+THE ffmpeg-speex BINARY THIS PROJECT PUBLISHES
+
+Built from the ffmpeg 7.0.2 sources above and the vendored speex, with neither
+--enable-gpl nor --enable-version3, so it is LGPL-2.1-or-later. tools/ffmpeg-speex/build.sh
+is the exact recipe, and both sources are the ones named above.
+
+
+CREDIT
+
+The knowledge about this firmware is not ours. Where the password lives, how the accounts
+are stored, how the ssh server is started, which files can be changed: that came from
+
+  github.com/fquinto/bticinoClasse300x
+  github.com/Keyaku/bticino-c100x-c300x
+  github.com/slyoldfox/c300x-controller

@@ -1,0 +1,15 @@
+# Your answers, with your passwords in them
+config.yaml
+# Build output and downloads
+firmware/build/
+device/build/
+*.fwz
+
+# Binaries: fetched for your machine, or built by you. None of them belong in here.
+.tools/
+/build/
+tools/fwz/build/
+tools/ffmpeg-speex/build/
+tools/private-strings
+
+__pycache__/

@@ -1,0 +1,15 @@
+# Keep line endings the same everywhere.
+#
+# The shell scripts run on the intercom, which is Linux. A file that picked up Windows line
+# endings on the way through fails there with a message that names the wrong thing: the
+# shell reads the carriage return as part of the command and says the command does not
+# exist.
+#
+# So every text file is stored and checked out with Unix line endings, on all three
+# systems. PowerShell does not mind them.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gz  binary
+*.fwz binary
