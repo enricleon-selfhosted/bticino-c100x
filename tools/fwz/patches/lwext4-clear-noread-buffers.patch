@@ -1,0 +1,64 @@
+Clear a cache buffer before handing it out for a block nobody read
+
+ext4_block_get_noread returns a buffer without reading anything into it -- the caller is
+expected to fill it. But the buffer either came straight from malloc, or was last used for a
+different block. Whatever it holds reaches the disk in every byte the caller does not
+overwrite.
+
+In a firmware image built on a machine with address randomisation, that shows up as heap
+addresses sitting in the padding after a directory entry, different on every build.
+
+A handful of bytes in a gigabyte. Two people cannot then confirm they built the same
+firmware, and fragments of the building process travel inside a file that gets published.
+
+--- WHY HERE AND NOT AT THE CALL SITE ---
+
+lwext4 has an unwritten contract: whoever calls _get_noread clears the buffer. Most callers
+do. Of the twenty-eight call sites, these do not:
+
+    ext4_dir_idx.c    427, 976        directory index
+    ext4_extent.c    1036, 1376       extent tree
+    ext4_mkfs.c       325
+    ext4_journal.c    eight places
+
+Clearing it in ext4_dir_idx.c alone is not enough, because the extent tree leaks too. Doing
+it where the buffer is handed out covers all of them.
+
+--- WHY ONLY WHEN is_new ---
+
+If the buffer is already cached for this same block it may be holding writes that have not
+reached the disk yet. Clearing that would throw them away -- trading a quiet leak for a
+loud loss.
+
+--- WHY NO TOOL CATCHES IT ---
+
+valgrind names the ext4_dir_idx.c sites and no more: it sees uninitialised memory, and a
+buffer recycled from another block is initialised, just with somebody else's data. That
+half is invisible to it, so the leak has to be reasoned about rather than hunted. The
+plainest symptom is a directory created inside a directory: the same change made twice on
+a pristine image gives two different images.
+
+With the clear in place, two builds from identical input produce the same file, byte for
+byte.
+
+--- WHY NOT THE ALTERNATIVES ---
+
+CONFIG_USE_USER_MALLOC, lwext4's own hook for supplying an allocator, would avoid touching
+the source. It segfaults: the header defines the macro but never declares the prototypes,
+so the call is made without one and the pointer is truncated to 32 bits. That is a second
+bug in its own right.
+
+Interposing our own ext4_block_get_noread at build time cannot work either: the wrapper
+cannot see is_new, and without it the clear becomes destructive.
+
+--- a/src/ext4_blockdev.c
++++ b/src/ext4_blockdev.c
+@@
+ 	if (!b->data)
+ 		return ENOMEM;
+ 
++	if (is_new)
++		memset(b->data, 0, bdev->bc->itemsize);
++
+ 	return EOK;
+ }
