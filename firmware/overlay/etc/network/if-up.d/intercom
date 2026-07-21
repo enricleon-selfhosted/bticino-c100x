@@ -1,0 +1,33 @@
+#!/bin/sh
+# shellcheck shell=dash
+set -u
+
+# runs in the same if-up pass that rebuilds the chain
+IPT=/usr/sbin/iptables
+IFACE=wlan0
+
+PRIVATE="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
+
+CHANGED=0
+
+open() {   # open <tcp|udp> <port>
+    # shellcheck disable=SC2086  # the list is several words on purpose
+    for src in $PRIVATE; do
+        if ! $IPT -C INPUT -i "$IFACE" -s "$src" -p "$1" --dport "$2" -j ACCEPT 2>/dev/null; then
+            $IPT -I INPUT 1 -i "$IFACE" -s "$src" -p "$1" --dport "$2" -j ACCEPT 2>/dev/null \
+                && CHANGED=1
+        fi
+    done
+}
+
+open tcp 8080
+open tcp 1984
+open tcp 8555
+open udp 8555
+
+if [ "$CHANGED" -eq 1 ]; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') firewall: 8080, 1984 and 8555 open on $IFACE" \
+        >> /home/bticino/cfg/extra/setup.log 2>/dev/null || true
+fi
+
+exit 0

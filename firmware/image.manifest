@@ -1,0 +1,28 @@
+# kind | args...  (see firmware/steps/write-changes.sh)
+note    | # accounts and shell access
+append  | /etc/passwd | root2:x:0:0:root:/home/root:/bin/sh | 0644
+append  | /etc/passwd | bticino2:x:1000:1000::/home/bticino:/bin/sh | 0644
+append  | /etc/shadow | root2:{HASH}:18033:0:99999:7::: | 0640
+append  | /etc/shadow | bticino2:{HASH}:18033:0:99999:7::: | 0640
+keydir  | /etc/dropbear | 0755
+key     | /etc/dropbear/authorized_keys | 0600
+keydir  | /home/root | 0700
+keydir  | /home/root/.ssh | 0700
+key     | /home/root/.ssh/authorized_keys | 0600
+symlink | ../init.d/dropbear | /etc/rc5.d/S98dropbear
+note    | # wireless
+overlay | etc/modprobe.d/brcmfmac.conf | /etc/modprobe.d/brcmfmac.conf | 0644 | 0755
+note    | # the ports that answer from your network
+overlay | etc/network/if-up.d/intercom | /etc/network/if-up.d/intercom | 0755 | 0755
+note    | # our own files
+mkdir   | /opt | 0755
+mkdir   | /opt/intercom | 0755
+mkdir   | /opt/intercom/payload | 0755
+put     | setup.sh | /opt/intercom/setup.sh | 0755
+put     | setup.conf | /opt/intercom/setup.conf | 0600
+mkdir   | /opt/intercom/converge.d | 0755
+putdir  | converge.d | /opt/intercom/converge.d | 0755
+putdir  | payload | /opt/intercom/payload | auto
+note    | # start-up
+symlink | ../../opt/intercom/setup.sh | /etc/rc5.d/S97setup
+rm      | /etc/rc5.d/S99TcpDump2Mqtt
