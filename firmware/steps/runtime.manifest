@@ -1,0 +1,5 @@
+# name | kind | dest | exec | sha256 | url
+node|archive|node|0|fb023264572944b187faf703fcbaf9aa95e443258422b90dbe755c77d3082e0f|https://github.com/enricleon-selfhosted/bticino-c100x/releases/download/v1.0.0/node-v17.9.1-linux-armv7l.tar.gz
+libatomic|file|lib/libatomic.so.1|0|ebb85eb711728731a5562d9f0e9dbdf3095451412dbb9319ed60d9b43a000533|https://github.com/enricleon-selfhosted/bticino-c100x/releases/download/v1.0.0/libatomic.so.1.2.0
+go2rtc|file|bin/go2rtc|1|4d7e1639af5a2722a28e864468fd8099b3c1682565446c798bf9e3b38fde12e4|https://github.com/enricleon-selfhosted/bticino-c100x/releases/download/v1.0.0/go2rtc_linux_arm
+ffmpeg-speex|file|bin/ffmpeg-speex|1|e033efe2de6a5a4cf342aa0c5a8bcff9c09a9e1a7b2de1cb6fd4f80d4c0f204d|https://github.com/enricleon-selfhosted/bticino-c100x/releases/download/v1.0.0/ffmpeg-speex-linux-armv7
