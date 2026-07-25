@@ -1,0 +1,28 @@
+# Example answers. install.sh asks and writes config.yaml itself.
+# config.yaml stays out of git: it holds your passwords.
+
+mqtt:
+  host: 192.168.1.10
+  port: 1883
+  username: bticino
+  password: change-me
+  topic: bticinocontroller
+  status_interval: 60
+
+device:
+  model: C100X
+  firmware: 1.5.8
+  ssh_public_key: "ssh-rsa AAAA... you@yourmachine"
+  root_password: ""  # empty: the installer makes one up
+  startup_delay: 60
+
+cloud:
+  mode: off      # off patches the unit to run without the cloud
+  block_updates: no
+
+door:
+  open_sequence: "*8*19*20##"
+  close_sequence: "*8*20*20##"
+
+video:
+  fmtp: "packetization-mode=1;profile-level-id=42401E;sprop-parameter-sets=Z0JAHqaAoD2Q,aM48gA=="
