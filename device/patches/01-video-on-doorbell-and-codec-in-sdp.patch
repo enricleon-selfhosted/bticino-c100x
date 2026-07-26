@@ -1,0 +1,79 @@
+diff --git a/config.js b/config.js
+index 1a1aa1f..7f539e2 100644
+--- a/config.js
++++ b/config.js
+@@ -12,7 +12,8 @@ const model = utils.model()
+ 
+ const global = {
+     // Use the higher resolution video stream
+-    'highResVideo': model !== 'c100x'
++    'highResVideo': model !== 'c100x',
++    'videoFmtp': 'packetization-mode=1;profile-level-id=42401E;sprop-parameter-sets=Z0JAHqaAoD2Q,aM48gA=='
+ }
+ const doorUnlock = {
+     // Default behaviour is device ID 20, if you need more, add them to additionalLocks in config.json
+diff --git a/lib/rtsp-server.js b/lib/rtsp-server.js
+index ec797f4..efd13f6 100644
+--- a/lib/rtsp-server.js
++++ b/lib/rtsp-server.js
+@@ -11,6 +11,7 @@ const PersistentSipManager = require('./persistent-sip-manager');
+ const { ClientServer } = require('@slyoldfox/rtsp-streaming-server/build/lib/ClientServer');
+ const { Mounts, Mount } = require('@slyoldfox/rtsp-streaming-server');
+ const utils = require('./utils')
++const config = require('../config')
+ const debug = utils.getDebugger('rtsp-server');
+ 
+ const audioPort = 10000
+@@ -30,14 +31,16 @@ class InviteRequestHandler {
+         this.#eventbus = eventbus
+     }
+ 
+-    resetIncomingCallRequest() {
++    resetIncomingCallRequest(keepEndpoint) {
+         console.log("RTSP: RESET the incoming call request")
+         if(this.#resetHandler) {
+             // This shouldn't happen, but in case a second INVITE comes in, cancel the previous reset handler
+             clearTimeout(this.#resetHandler)
+-        }            
++        }
+         this.#incomingCallRequest = undefined
+-        this.#registry.endpoints.delete(IDENTIFIER)
++        if( keepEndpoint !== true ) {
++            this.#registry.endpoints.delete(IDENTIFIER)
++        }
+     }
+ 
+     handle(request) {
+@@ -186,7 +200,7 @@ class ClientServerHandler {
+                         sipCall.then((sdp) => {
+                             debug("RTSP: SIP: RESOLVED")
+                             if(this.#inviteRequestHandler.incomingCallRequest) {
+-                                this.#inviteRequestHandler.resetIncomingCallRequest()
++                                this.#inviteRequestHandler.resetIncomingCallRequest(true)
+                             }
+ 
+                             resolve()
+@@ -250,9 +265,13 @@ module.exports = {
+             }
+         })
+ 
++        const fmtp = config.global.videoFmtp
++            ? `a=fmtp:96 ${config.global.videoFmtp}\r\n`
++            : ""
++
+         clientServer.start().then( () => {
+             // Add a mount with audio (port 10000) and video (port 10002), order of calling createStream is important here!
+-            const sdp = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=No Name\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\nm=audio 0 RTP/AVP 110\r\na=rtpmap:110 speex/8000\r\na=control:streamid=0\r\nm=video 0 RTP/AVP 96\r\na=rtpmap:96 H264/90000\r\na=control:streamid=1\r\n"
++            const sdp = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=No Name\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\nm=audio 0 RTP/AVP 110\r\na=rtpmap:110 speex/8000\r\na=control:streamid=0\r\nm=video 0 RTP/AVP 96\r\na=rtpmap:96 H264/90000\r\n" + fmtp + "a=control:streamid=1\r\n"
+             const mount = mounts.addMount(requestUri, sdp)
+             const clientLeave = mount.clientLeave 
+             mount.clientLeave = (client) => {
+@@ -272,7 +301,7 @@ module.exports = {
+             } )
+ 
+             // Add a video only stream by adding a new mount with the same stream reference from the original mount
+-            const sdpvideo = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=No Name\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\nm=video 0 RTP/AVP 96\r\na=rtpmap:96 H264/90000\r\na=control:streamid=1\r\n"
++            const sdpvideo = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=No Name\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\nm=video 0 RTP/AVP 96\r\na=rtpmap:96 H264/90000\r\n" + fmtp + "a=control:streamid=1\r\n"
+             const videoOnlyMount = new Mount(mounts, "/doorbell-video", sdpvideo, mount.hooks)
+             videoOnlyMount.streams[videoStream.id] = videoStream
+             mounts.mounts["/doorbell-video"] = videoOnlyMount

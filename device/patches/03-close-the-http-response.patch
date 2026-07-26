@@ -1,0 +1,106 @@
+diff --git a/lib/api.js b/lib/api.js
+index 1cbe285..7aabeea 100644
+--- a/lib/api.js
++++ b/lib/api.js
+@@ -54,6 +54,7 @@ class Api {
+ 					response.write("</ul>")
+ 				}
+ 				response.write("</body></html>")
++				response.end()
+ 			} else {
+ 				var api = this.#apis.get(parsedUrl.pathname)
+ 				if (api) {
+@@ -64,21 +65,32 @@ class Api {
+ 							response.write('</head><body>')
+ 							response.write("<a href='./'><< Back</a>")
+ 						}
+-						api.handle(request, response, parsedUrl, q)
+-						if (!q.raw) {
+-							response.write("</body></html>")
++						const result = api.handle(request, response, parsedUrl, q)
++						const finish = () => {
++							if (response.writableEnded) return
++							if (!q.raw) {
++								response.write("</body></html>")
++							}
++							response.end()
++						}
++						if (result && typeof result.then === 'function') {
++							result.then(finish, (e) => { console.error(e); finish() })
++						} else if (result !== true) {
++							finish()
+ 						}
+ 					} catch (e) {
+ 						console.error(e)
+-						response.write(e.message)
++						if (!response.writableEnded) {
++							response.write(e.message)
++							response.end()
++						}
+ 					}
+ 				} else {
+ 					response.writeHead(404, { "Content-Type": "text/plain" });
+ 					response.write("404")
++					response.end()
+ 				}
+ 			}
+-			if (!q.raw)
+-				response.end()
+ 		});
+ 		server.listen(8080, '0.0.0.0'); // Don't bother with IPv6
+ 		console.log("API listening on port 8080 for requests")
+diff --git a/lib/apis/ha.js b/lib/apis/ha.js
+index dd20b77..ed9223f 100644
+--- a/lib/apis/ha.js
++++ b/lib/apis/ha.js
+@@ -78,6 +78,7 @@ module.exports = class Api {
+                     response.end()
+                 })
+ 			}
++			return true
+ 		}
+ 	}
+ 
+diff --git a/lib/apis/mute-ringer.js b/lib/apis/mute-ringer.js
+index 8f43db8..dbc548f 100644
+--- a/lib/apis/mute-ringer.js
++++ b/lib/apis/mute-ringer.js
+@@ -32,9 +32,12 @@ module.exports = class Api {
+                         this.#unmute()
+                     }
+                     let status = { "status": this.#muted }
+-                    response.writeHead(200, { "Content-Type": "text/json" })
+-                    response.end(JSON.stringify(status))                    
++                    if (!response.headersSent) {
++                        response.writeHead(200, { "Content-Type": "text/json" })
++                    }
++                    response.end(JSON.stringify(status))
+                 } )
++                return true
+             }
+         }
+         if (!q.raw) {
+diff --git a/lib/apis/sshd-start.js b/lib/apis/sshd-start.js
+index 6b6650c..2973511 100644
+--- a/lib/apis/sshd-start.js
++++ b/lib/apis/sshd-start.js
+@@ -9,8 +9,17 @@ module.exports = class Api {
+         return "Starts dropbear (sshd)"
+     }
+ 
+     handle(request, response) {
+-        response.writeHead(200, { "Content-Type": "text/plain" });
+-        utils.startSsh( () => { response.write("DONE") } )
++        if (!response.headersSent) {
++            response.writeHead(200, { "Content-Type": "text/plain" })
++        }
++        return new Promise((resolve) => {
++            utils.startSsh(() => {
++                if (!response.writableEnded) {
++                    response.write("DONE")
++                }
++                resolve()
++            })
++        })
+     }
+ }

@@ -1,0 +1,31 @@
+diff --git a/lib/openwebnet.js b/lib/openwebnet.js
+index 7ca9154..71fb346 100644
+--- a/lib/openwebnet.js
++++ b/lib/openwebnet.js
+@@ -76,7 +76,7 @@ class OpenWebnet {
+             this.resolve(command)
+         } else {
+             debug("pass is caling reject")
+-            this.reject()
++            this.reject(new Error("the intercom did not accept the command, it replied: " + arg))
+         }
+         return result
+     }
+@@ -235,6 +237,17 @@ class OpenWebnet {
+     _api_ringerStatus() {
+         this.#push("*#8**33##", (arg) => { return arg == "*#8**33*0##" || arg == "*#8**33*1##" }, (arg, command) => this.#pass(arg, command))
+     }
++    _api_ringerVolume() {
++        const value = arguments[1]
++        this.#push("*#8**#41*" + value + "##",
++                   (arg) => { return new RegExp("^\\*#8\\*\\*41\\*" + value + "[*#]").test(arg) },
++                   (arg, command) => this.#pass(arg, command))
++    }
++    _api_ringerVolumeStatus() {
++        this.#push("*#8**41##",
++                   (arg) => { return /^\*#8\*\*41\*\d+[*#]/.test(arg) },
++                   (arg, command) => this.#pass(arg, command))
++    }
+     _api_aswmEnable() {
+         this.#push("*8*91##", (arg, command) => { return this.#pass(arg, command) })
+     }

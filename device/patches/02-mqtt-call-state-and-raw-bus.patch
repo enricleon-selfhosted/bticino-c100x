@@ -1,0 +1,238 @@
+diff --git a/lib/handlers/openwebnet-handler.js b/lib/handlers/openwebnet-handler.js
+index bea2d6f..819b922 100644
+--- a/lib/handlers/openwebnet-handler.js
++++ b/lib/handlers/openwebnet-handler.js
+@@ -92,6 +92,9 @@ class OpenwebnetHandler {
+             case '*#8**33*1##':
+                 this.#api.apis.get('/mute').setMuted(false)
+                 break
++            case msg.startsWith('*#8**35*') ? msg : undefined:
++                this.#mqtt.dispatchCallState(msg)
++                break
+             default:
+                 return false
+         }
+diff --git a/lib/mqtt.js b/lib/mqtt.js
+index 7453194..a56fd21 100644
+--- a/lib/mqtt.js
++++ b/lib/mqtt.js
+@@ -8,6 +8,11 @@ class MQTT {
+ 
+     #api
+     #cmd
++    #args
++    #stream
++    #retryAfter
++    #stalled
++    #callState
+ 
+     constructor(api) {
+         this.#api = api
+@@ -15,17 +20,82 @@ class MQTT {
+             this.#updateStatus()
+         }
+         let cmd = config.mqtt_config.exec_path + ' -h ' + config.mqtt_config.host + ' -p ' + config.mqtt_config.port;
++        let args = [ '-h', String(config.mqtt_config.host), '-p', String(config.mqtt_config.port) ]
+         if( config.mqtt_config.username.length > 0 ) {
+             cmd += ' -u ' + config.mqtt_config.username + ' -P ' + config.mqtt_config.password
++            args = args.concat( [ '-u', String(config.mqtt_config.username), '-P', String(config.mqtt_config.password) ] )
+         }
+         this.#cmd = cmd;
++        this.#args = args;
+     }
+ 
+     dispatch(msg) {
+-        if( config.mqtt_config.all_events_enabled ) {
+-            let topic = config.mqtt_config.topic + '/all_events'
+-            this.#dispatchInternal(topic, msg)
++        if( !config.mqtt_config.all_events_enabled ) return
++        if( !(config.mqtt_config.enabled && config.mqtt_config.host.length > 0) ) return
++        try {
++            const stream = this.#allEventsStream()
++            if( !(stream && stream.stdin && stream.stdin.writable) ) return
++            if( this.#stalled ) return
++            if( stream.stdin.write(msg + "\n") === false ) {
++                this.#stalled = true
++                stream.stdin.once('drain', () => { this.#stalled = false })
++            }
++        } catch (e) {
++            console.error("Could not publish to all_events: " + e.message)
++        }
++    }
++
++    #signalDbm(wireless) {
++        if( !wireless || typeof wireless !== 'object' ) return undefined
++        for( const key of Object.keys(wireless) ) {
++            if( key.trim() === 'signal' ) {
++                const found = String(wireless[key]).match(/-?\d+/)
++                if( found ) return Number(found[0])
++            }
++        }
++        return undefined
++    }
++
++    #allEventsStream() {
++        if( this.#stream ) return this.#stream
++        if( this.#retryAfter && Date.now() < this.#retryAfter ) return undefined
++
++        const args = this.#args.concat( [ '-l', '-t', config.mqtt_config.topic + '/all_events' ] )
++        debug("spawn: " + config.mqtt_config.exec_path + ' -l -t ' + config.mqtt_config.topic + '/all_events')
++        let stream
++        try {
++            stream = child_process.spawn( config.mqtt_config.exec_path, args,
++                                          { stdio: [ 'pipe', 'ignore', 'ignore' ] } )
++        } catch (e) {
++            this.#retryAfter = Date.now() + 30000
++            console.error("Could not start the publisher: " + e.message)
++            return undefined
+         }
++        this.#stream = stream
++
++        const forget = () => {
++            if( this.#stream === stream ) this.#stream = undefined
++            this.#retryAfter = (Date.now() - started < 2000) ? Date.now() + 30000 : 0
++        }
++        const started = Date.now()
++        stream.on('exit', forget)
++        stream.on('error', forget)
++        if( stream.stdin ) {
++            stream.stdin.on('error', forget)
++        } else {
++            forget()
++            try { stream.kill() } catch (e) {}
++            return undefined
++        }
++        return stream
++    }
++
++    dispatchCallState(msg) {
++        const match = msg.match(/^\*#8\*\*35\*(\d+)[*#]/)
++        if( !match ) return
++        if( match[1] === this.#callState ) return
++        this.#callState = match[1]
++        this.#dispatchInternal(config.mqtt_config.topic + '/state', match[1], true)
+     }
+ 
+     dispatchMessage(msg) {
+@@ -50,49 +160,70 @@ class MQTT {
+         this.#dispatchInternal(config.mqtt_config.topic + '/lock/' + lockDevice, lockStatus)
+     }
+ 
+-    #dispatchInternal( topic, msg ) {
+-        if( config.mqtt_config.enabled && config.mqtt_config.host.length > 0 ) {
+-            let cmd = this.#cmd + ( config.mqtt_config.retain ? ' -r' : '' ) + ' -t ' + topic + " -m '" + msg + "'"
+-            debug("exec: " + cmd)
+-            try {
+-                child_process.exec(cmd, {timeout: 2500}, (err, stdout, stderr) => {
+-                    //console.log(msg)
+-                });
+-            } catch (e) {
+-                console.error(e)
+-            }
+-        }
+-    }
+-
+-    async #updateStatus() {
++    #dispatchInternal( topic, msg, forceRetain ) {
+         if( !(config.mqtt_config.enabled && config.mqtt_config.host.length > 0) ) {
+             return
+         }
+-        let status = {}
+-        status['version'] = utils.version()
+-        status['release'] = utils.release()
+-        status['if'] = utils.if()
+-        status['wirelessInfo'] = utils.wirelessInfo()
+-        status['freemem'] = utils.freemem()
+-        status['totalmem'] = utils.totalmem()
+-        status['load'] = utils.load()
+-        status['temperature'] = utils.temperature() + ' °C'
+-        status['uptime'] = utils.uptime()
+-        status['muted'] = this.#api.apis.get('/mute').muted ? '1' : '0'
+-        let aswmStatus = await openwebnet.run("aswmStatus")
+-        let matches = [...aswmStatus.matchAll(/\*#8\*\*40\*([01])\*([01])\*/gm)]
+-        if( matches && matches.length > 0 && matches[0].length > 0 ) {
+-            // *#8**40*0*0*0153*1*25## - what are '0153' '1' and '25' ?
+-            status['voicemail_enabled'] = matches[0][1]
+-            status['welcome_message_enabled'] = matches[0][2]
+-        } else {
+-            console.error("Error matching voicemail status")
++        const args = this.#args
++            .concat( (config.mqtt_config.retain || forceRetain) ? [ '-r' ] : [] )
++            .concat( [ '-t', String(topic), '-m', String(msg) ] )
++        debug("spawn: " + config.mqtt_config.exec_path + ' -t ' + topic)
++        try {
++            const child = child_process.spawn( config.mqtt_config.exec_path, args,
++                                               { stdio: [ 'ignore', 'ignore', 'ignore' ] } )
++            child.on('error', (e) => console.error("Could not publish to " + topic + ": " + e.message))
++            const deadline = setTimeout( () => { try { child.kill() } catch (e) {} }, 5000 )
++            child.on('exit', () => clearTimeout(deadline))
++        } catch (e) {
++            console.error("Could not publish to " + topic + ": " + e.message)
+         }
++    }
++
++    async #updateStatus() {
++        try {
++            if( !(config.mqtt_config.enabled && config.mqtt_config.host.length > 0) ) {
++                return
++            }
++            let status = {}
++            status['version'] = utils.version()
++            status['release'] = utils.release()
++            status['if'] = utils.if()
++            status['wirelessInfo'] = utils.wirelessInfo()
++            status['freemem'] = utils.freemem()
++            status['totalmem'] = utils.totalmem()
++            status['load'] = utils.load()
++            status['temperature'] = utils.temperature() + ' °C'
++            status['uptime'] = utils.uptime()
+ 
+-        status['voicemail_messages'] = utils.voiceMailMessages()
++            status['uptime_seconds'] = utils.uptimeSeconds()
++            status['signal_dbm'] = this.#signalDbm(status['wirelessInfo'])
++            status['muted'] = this.#api.apis.get('/mute').muted ? '1' : '0'
+ 
+-        this.#dispatchInternal(config.mqtt_config.topic + '/status', JSON.stringify(status) )
+-        setTimeout( () => this.#updateStatus(), config.mqtt_config.status_polling_interval * 1000 )
++            status['voicemail_messages'] = utils.voiceMailMessages()
++
++            try {
++                const deadline = new Promise( (resolve, reject) =>
++                    setTimeout( () => reject(new Error('the intercom did not answer in time')), 10000 ) )
++                const aswmStatus = await Promise.race( [ openwebnet.run("aswmStatus"), deadline ] )
++                const matches = [...String(aswmStatus).matchAll(/\*#8\*\*40\*([01])\*([01])\*/gm)]
++                if( matches && matches.length > 0 && matches[0].length > 0 ) {
++                    status['voicemail_enabled'] = matches[0][1]
++                    status['welcome_message_enabled'] = matches[0][2]
++                }
++            } catch (e) {
++                status['query_error'] = String(e && e.message ? e.message : e)
++            }
++
++            this.#dispatchInternal(config.mqtt_config.topic + '/status', JSON.stringify(status), true )
++
++            if( this.#callState !== undefined ) {
++                this.#dispatchInternal(config.mqtt_config.topic + '/state', this.#callState, true)
++            }
++        } catch (e) {
++            console.error("Could not publish the status: " + e)
++        } finally {
++            setTimeout( () => this.#updateStatus(), config.mqtt_config.status_polling_interval * 1000 )
++        }
+     }
+ 
+ }
+diff --git a/lib/utils.js b/lib/utils.js
+index d1432f7..34bffb3 100644
+--- a/lib/utils.js
++++ b/lib/utils.js
+@@ -148,6 +148,9 @@ module.exports = {
+             return wireless_stats
+         } )
+     },
++    uptimeSeconds() {
++        return tryAndCatch( () => os.uptime() )
++    },
+     uptime() {
+         return tryAndCatch( () => {
+             return this.secondsToDhms(os.uptime());

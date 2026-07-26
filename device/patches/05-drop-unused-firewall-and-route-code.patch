@@ -1,0 +1,59 @@
+diff --git a/controller-homekit.js b/controller-homekit.js
+index 064f58b..ae612fb 100644
+--- a/controller-homekit.js
++++ b/controller-homekit.js
+@@ -8,8 +8,6 @@ const base = require('./base')
+ const config = require('./config')
+ const utils = require('./lib/utils')
+ 
+-utils.fixMulticast()
+-utils.firewallAllowLAN()
+ 
+ const rtspserver = require('./lib/rtsp-server')
+ 
+diff --git a/lib/utils.js b/lib/utils.js
+index 34bffb3..6f9c025 100644
+--- a/lib/utils.js
++++ b/lib/utils.js
+@@ -220,41 +220,6 @@ module.exports = {
+ 
+         return this["_model"]
+     },
+-    fixMulticast() {
+-        try {
+-            // Make sure we route multicast to the wifi so Homekit can advertise properly
+-            let output = child_process.execSync("ip route show exact 224.0.0.0/4 dev wlan0", {timeout: 2500}).toString()
+-            if( output.length == 0 ) {
+-                console.log("!!! Could not detect multicast route on wlan0, adding it ... to support bonjour.")
+-                child_process.execSync("/sbin/route add -net 224.0.0.0 netmask 240.0.0.0 dev wlan0")
+-            }
+-        } catch( e ) {
+-            console.error("Failure retrieving or modifying route.")
+-        }        
+-    },
+-    firewallAllowLAN() {
+-        try {
+-            // Detect if INPUT rules are active
+-            let output = child_process.execSync("iptables -L INPUT", {timeout: 2500}).toString().split('\n')
+-            if( output.length > 3 ) {
+-                // Fetch the LAN subnet from the route wlan0 table
+-                let subnet = child_process.execSync("/sbin/ip route show dev wlan0 | /bin/grep src").toString().split(' ')[0]
+-                console.log("*** Firewall is enabled, adding an ACCEPT rule for subnet: " + subnet)
+-                try {
+-                    // Check if a firewall rule already exists
+-                    child_process.execSync(`/usr/sbin/iptables -C INPUT -s ${subnet} -j ACCEPT`, {timeout: 2500})
+-                } catch(e) {
+-                    if(e.status == 1) {
+-                        // Insert a firewall rule on top of the list of the LAN
+-                        child_process.execSync(`/usr/sbin/iptables -I INPUT 1 -s ${subnet} -j ACCEPT`, {timeout: 2500})
+-                        console.log("*** Inserted firewall rule for subnet: " + subnet)
+-                    }
+-                }
+-            }            
+-        } catch( e ) {
+-            console.error("Failure querying firewall.")
+-        }        
+-    },    
+     domain() {
+         if( !fs.existsSync("/etc/flexisip/domain-registration.conf") ) {
+             return undefined
