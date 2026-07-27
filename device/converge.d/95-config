@@ -1,0 +1,51 @@
+#!/bin/sh
+# shellcheck shell=dash
+set -u
+. "$(dirname "$0")/common.sh"
+
+[ -d "$OPT/payload" ] || exit 0
+
+    json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+    MQ_HOST=$(json_escape "${MQTT_HOST:-}")
+    MQ_USER=$(json_escape "${MQTT_USER:-}")
+    MQ_PASS=$(json_escape "${MQTT_PASS:-}")
+    MQ_TOPIC=$(json_escape "${MQTT_TOPIC:-bticinocontroller}")
+    FMTP=$(json_escape "${VIDEO_FMTP:-}")
+    OPEN=$(json_escape "${DOOR_OPEN:-*8*19*20##}")
+    CLOSE=$(json_escape "${DOOR_CLOSE:-*8*20*20##}")
+    [ -n "$MQTT_HOST" ] && MQ_ON=true || MQ_ON=false
+    if [ -n "$FMTP" ]; then
+        GLOBAL="\"global\": { \"highResVideo\": false, \"videoFmtp\": \"$FMTP\" },"
+    else
+        GLOBAL="\"global\": { \"highResVideo\": false },"
+    fi
+    cat > "$INTERCOM/config.json.new" <<JSON
+{
+  $GLOBAL
+  "doorUnlock": {
+    "openSequence": "$OPEN",
+    "closeSequence": "$CLOSE"
+  },
+  "mqtt_config": {
+    "enabled": $MQ_ON,
+    "all_events_enabled": $MQ_ON,
+    "enable_intercom_status": $MQ_ON,
+    "status_polling_interval": ${MQTT_INTERVAL:-60},
+    "host": "$MQ_HOST",
+    "port": ${MQTT_PORT:-1883},
+    "username": "$MQ_USER",
+    "password": "$MQ_PASS",
+    "topic": "$MQ_TOPIC"
+  },
+  "sip": {
+    "debug": false
+  }
+}
+JSON
+    if [ ! -f "$INTERCOM/config.json" ] || ! cmp -s "$INTERCOM/config.json.new" "$INTERCOM/config.json"; then
+        mv "$INTERCOM/config.json.new" "$INTERCOM/config.json" 2>/dev/null
+        chmod 600 "$INTERCOM/config.json" 2>/dev/null
+        say "wrote config.json"
+    else
+        rm -f "$INTERCOM/config.json.new"
+    fi

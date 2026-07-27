@@ -1,0 +1,9 @@
+#!/bin/sh
+# shellcheck shell=dash
+set -u
+. "$(dirname "$0")/common.sh"
+
+if [ ! -r "$CONF" ]; then
+    say "no answers file at $CONF -- nothing to converge yet"
+    exit 10
+fi

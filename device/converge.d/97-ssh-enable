@@ -1,0 +1,30 @@
+#!/bin/sh
+# shellcheck shell=dash
+set -u
+. "$(dirname "$0")/common.sh"
+
+enable_shell_via_config() {
+    CX=/var/tmp/conf.xml
+    w=0
+    while [ ! -f "$CX" ] && [ "$w" -lt 120 ]; do w=$(( w + 1 )); sleep 1; done
+    [ -f "$CX" ] || { say "WARNING: $CX never appeared; the ssh tag could not be set"; return 0; }
+    said=0
+    n=0
+    while [ "$n" -lt 20 ]; do
+        if [ -f "$CX" ] && ! grep -q '<abil_ssh>1</abil_ssh>' "$CX" 2>/dev/null; then
+            if grep -q '<abil_ssh>' "$CX" 2>/dev/null; then
+                sed -i 's|<abil_ssh>[^<]*</abil_ssh>|<abil_ssh>1</abil_ssh>|' "$CX" 2>/dev/null
+            elif grep -q '<servizi>' "$CX" 2>/dev/null; then
+                sed -i 's|<servizi>|<servizi>\n              <abil_ssh>1</abil_ssh>|' "$CX" 2>/dev/null
+            else
+                say "WARNING: no <servizi> in $CX; ssh will stay off"
+                return 0
+            fi
+            touch "$CX" 2>/dev/null
+            [ "$said" = 0 ] && { say "conf.xml: set the ssh server tag and asked the unit to re-read"; said=1; }
+        fi
+        n=$(( n + 1 ))
+        sleep 3
+    done
+}
+( enable_shell_via_config ) </dev/null >/dev/null 2>&1 &

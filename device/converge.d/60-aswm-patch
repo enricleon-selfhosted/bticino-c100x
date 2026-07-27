@@ -1,0 +1,65 @@
+#!/bin/sh
+# shellcheck shell=dash
+set -u
+. "$(dirname "$0")/common.sh"
+
+if [ "$CLOUD_MODE" = "off" ] && [ ! -f "$EXTRA/.patch_disabled" ]; then
+    BIN=/home/bticino/bin/bt_answering_machine
+    if [ ! -f "$EXTRA/.aswm_orig.bin" ]; then
+        cat "$BIN" > "$EXTRA/.aswm_orig.bin" 2>/dev/null && say "kept a copy of the original binary"
+    fi
+    NEED=1
+    if [ -f "$EXTRA/.aswm_patched.bin" ] && [ -f "$EXTRA/.aswm_src.md5" ]; then
+        if [ "$(md5sum "$EXTRA/.aswm_orig.bin" | cut -d' ' -f1)" = "$(cat "$EXTRA/.aswm_src.md5")" ]; then
+            NEED=0
+        else
+            say "the system binary has changed: deriving the patched copy again"
+            rm -f "$EXTRA/.aswm_orig.bin"
+            cat "$BIN" > "$EXTRA/.aswm_orig.bin" 2>/dev/null
+        fi
+    fi
+    PATCHER=""
+    for p in "$OPT/payload/patch-aswm.sh" "$OPT/patch-aswm.sh" "$INTERCOM/patch-aswm.sh"; do
+        [ -x "$p" ] && { PATCHER="$p"; break; }
+    done
+    HALF="$EXTRA/.aswm_patched.building"
+    rm -f "$HALF"
+    if [ "$NEED" = "1" ] && [ -n "$PATCHER" ]; then
+        say "deriving the patched binary with $PATCHER"
+        if "$PATCHER" "$EXTRA/.aswm_orig.bin" "$HALF" >> "$LOG" 2>&1 && [ -s "$HALF" ]; then
+            mv "$HALF" "$EXTRA/.aswm_patched.bin"
+            md5sum "$EXTRA/.aswm_orig.bin" | cut -d' ' -f1 > "$EXTRA/.aswm_src.md5"
+            say "patched copy ready"
+        else
+            rm -f "$HALF"
+            say "WARNING: could not patch the binary. Keeping what is already there."
+        fi
+    elif [ "$NEED" = "1" ]; then
+        say "WARNING: no patcher found, so the patched copy cannot be made"
+    fi
+    if [ -f "$EXTRA/.aswm_patched.bin" ]; then
+        WANT=$(md5sum "$EXTRA/.aswm_patched.bin" | cut -d' ' -f1)
+        HAVE=$(md5sum "$BIN" 2>/dev/null | cut -d' ' -f1)
+        if [ "$WANT" != "$HAVE" ]; then
+            mount -o remount,rw / 2>/dev/null
+            cat "$EXTRA/.aswm_patched.bin" > "$BIN" 2>/dev/null
+            chmod 755 "$BIN" 2>/dev/null
+            chown bticino:bticino "$BIN" 2>/dev/null
+            sync
+
+            GOT=$(md5sum "$BIN" 2>/dev/null | cut -d' ' -f1)
+            if [ "$GOT" != "$WANT" ]; then
+                say "WARNING: the write did not come back right. Putting the original back."
+                cat "$EXTRA/.aswm_orig.bin" > "$BIN" 2>/dev/null
+                chmod 755 "$BIN" 2>/dev/null
+                chown bticino:bticino "$BIN" 2>/dev/null
+                sync
+                touch "$EXTRA/.patch_disabled"
+            else
+                say "installed the patched binary"
+            fi
+            mount -o remount,ro / 2>/dev/null
+        fi
+        [ -x "$BIN" ] || { mount -o remount,rw / 2>/dev/null; chmod 755 "$BIN"; sync; mount -o remount,ro / 2>/dev/null; }
+    fi
+fi

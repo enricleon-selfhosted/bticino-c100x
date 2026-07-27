@@ -1,0 +1,14 @@
+#!/bin/sh
+# shellcheck shell=dash
+set -u
+. "$(dirname "$0")/common.sh"
+
+echo 419430 > /proc/sys/net/core/rmem_max 2>/dev/null
+echo 419430 > /proc/sys/net/core/rmem_default 2>/dev/null
+
+HOOK=/etc/network/if-up.d/intercom
+if [ -x "$HOOK" ]; then
+    "$HOOK"
+else
+    say "WARNING: $HOOK is missing, so nothing answers from your network"
+fi

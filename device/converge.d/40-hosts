@@ -1,0 +1,18 @@
+#!/bin/sh
+# shellcheck shell=dash
+set -u
+. "$(dirname "$0")/common.sh"
+
+hosts_line() {
+    awk -v n="$1" '$2 == n { found = 1 } END { exit found ? 0 : 1 }' /var/tmp/hosts 2>/dev/null || {
+        echo "127.0.0.1 $1" >> /var/tmp/hosts 2>/dev/null && say "hosts: added $1"
+    }
+}
+hosts_line "$DOMAIN"
+
+if [ "$CLOUD_MODE" = "off" ]; then
+    hosts_line "eliot-iotHub.azure-devices.net"
+    if [ "${BLOCK_FIRMWARE_UPDATES:-no}" = "yes" ]; then
+        hosts_line "eliotdmstrg.blob.core.windows.net"
+    fi
+fi

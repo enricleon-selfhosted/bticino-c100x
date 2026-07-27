@@ -1,0 +1,28 @@
+#!/bin/sh
+# shellcheck shell=dash
+set -u
+. "$(dirname "$0")/common.sh"
+
+[ -d "$OPT/payload" ] || exit 0
+
+    mkdir -p "$INTERCOM" 2>/dev/null
+    for f in bundle.js run.sh patch-aswm.sh go2rtc.yaml; do
+        [ -f "$OPT/payload/$f" ] || continue
+        if [ ! -f "$INTERCOM/$f" ] || ! cmp -s "$OPT/payload/$f" "$INTERCOM/$f"; then
+            cat "$OPT/payload/$f" > "$INTERCOM/$f" 2>/dev/null
+            case "$f" in *.sh) chmod 755 "$INTERCOM/$f" 2>/dev/null ;; *) chmod 644 "$INTERCOM/$f" 2>/dev/null ;; esac
+            say "installed $f"
+        fi
+    done
+    RUNTIME="$OPT/payload/runtime.tar.gz"
+    if [ -f "$RUNTIME" ]; then
+        WANT=$(md5sum "$RUNTIME" 2>/dev/null | cut -d' ' -f1)
+        if [ "$WANT" != "$(cat "$EXTRA/.runtime_version" 2>/dev/null)" ]; then
+            say "installing the runtime"
+            mkdir -p "$EXTRA/node" "$EXTRA/lib" "$EXTRA/bin" 2>/dev/null
+            if tar -xzf "$RUNTIME" -C "$EXTRA" 2>/dev/null; then
+                echo "$WANT" > "$EXTRA/.runtime_version" 2>/dev/null
+                say "runtime installed"
+            fi
+        fi
+    fi

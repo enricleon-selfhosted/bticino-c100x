@@ -1,0 +1,119 @@
+#!/bin/sh
+# shellcheck shell=dash
+set -u
+. "$(dirname "$0")/common.sh"
+
+FLEX=/etc/flexisip
+flex_edit() {
+    [ -f "$FLEX/$1" ] || return 0
+    chattr -i "$FLEX/$1" 2>/dev/null
+    sed -i "$2" "$FLEX/$1" 2>/dev/null && say "flexisip: $3"
+    chattr +i "$FLEX/$1" 2>/dev/null
+}
+flex_needs() {
+    [ -f "$FLEX/$1" ] || return 1
+    ! grep -qE "$2" "$FLEX/$1" 2>/dev/null
+}
+
+FLEX_CHANGED=0
+
+if flex_needs users/route_ext.conf "sip:127\.0\.0\.1;transport=tcp"; then
+    flex_edit users/route_ext.conf \
+        "s|<sip:webrtc@[^>]*>|<sip:127.0.0.1;transport=tcp>|g" \
+        "webrtc route points at the local controller"
+    FLEX_CHANGED=1
+fi
+
+# both spellings of the group line exist in the wild
+ALLUSER='^\(alluser\|<sip:alluser@\)'
+for f in users/route_ext.conf users/route_int.conf; do
+    [ -f "$FLEX/$f" ] || continue
+    grep -q "$ALLUSER" "$FLEX/$f" 2>/dev/null || continue
+
+    if ! grep "$ALLUSER" "$FLEX/$f" | grep -q "webrtc@" 2>/dev/null; then
+        chattr -i "$FLEX/$f" 2>/dev/null
+        sed -i "/$ALLUSER/s|\$|, <sip:webrtc@$DOMAIN>|" "$FLEX/$f" 2>/dev/null \
+            && say "flexisip: added webrtc to the call group in $f"
+        chattr +i "$FLEX/$f" 2>/dev/null
+        FLEX_CHANGED=1
+    fi
+    if grep "$ALLUSER" "$FLEX/$f" | grep -q "c100x@" 2>/dev/null; then
+        chattr -i "$FLEX/$f" 2>/dev/null
+        sed -i "/$ALLUSER/s|, <sip:c100x@[^>]*>||g" "$FLEX/$f" 2>/dev/null \
+            && say "flexisip: removed c100x from the call group in $f (it was calling itself)"
+        chattr +i "$FLEX/$f" 2>/dev/null
+        FLEX_CHANGED=1
+    fi
+done
+
+if [ -f "$FLEX/users/route_ext.conf" ] && [ ! -L "$FLEX/users/route.conf" ]; then
+    chattr -i "$FLEX/users/route.conf" 2>/dev/null
+    ln -sf route_ext.conf "$FLEX/users/route.conf" 2>/dev/null \
+        && say "flexisip: route.conf now points at route_ext.conf"
+    FLEX_CHANGED=1
+fi
+
+if [ -f "$FLEX/users/users.db.txt" ] && ! grep -q "^webrtc@" "$FLEX/users/users.db.txt" 2>/dev/null; then
+    SEED=$(grep -m1 -E "^[a-z0-9]+@$DOMAIN" "$FLEX/users/users.db.txt" 2>/dev/null | sed 's/^[^ ]* //')
+    if [ -n "$SEED" ]; then
+        chattr -i "$FLEX/users/users.db.txt" 2>/dev/null
+        echo "webrtc@$DOMAIN $SEED" >> "$FLEX/users/users.db.txt" 2>/dev/null \
+            && say "flexisip: created the webrtc account"
+        chattr +i "$FLEX/users/users.db.txt" 2>/dev/null
+        FLEX_CHANGED=1
+    else
+        say "WARNING: no existing account to copy a password from. The controller will not register."
+    fi
+fi
+
+if [ -f "$FLEX/domain-registration.conf" ] && ! grep -q "127.0.0.1:5060" "$FLEX/domain-registration.conf" 2>/dev/null; then
+    chattr -i "$FLEX/domain-registration.conf" 2>/dev/null
+    echo "$DOMAIN sip:127.0.0.1:5060;transport=tcp" > "$FLEX/domain-registration.conf" 2>/dev/null \
+        && say "flexisip: domain served locally"
+    chattr +i "$FLEX/domain-registration.conf" 2>/dev/null
+    FLEX_CHANGED=1
+fi
+
+TRUSTED="127.0.0.1"
+if [ -f "$FLEX/flexisip.conf" ] && ! grep -q "^trusted-hosts=$TRUSTED\$" "$FLEX/flexisip.conf" 2>/dev/null; then
+    chattr -i "$FLEX/flexisip.conf" 2>/dev/null
+    sed -i "s|^trusted-hosts=.*|trusted-hosts=$TRUSTED|" "$FLEX/flexisip.conf" 2>/dev/null \
+        && say "flexisip: trusted-hosts = $TRUSTED"
+    chattr +i "$FLEX/flexisip.conf" 2>/dev/null
+    FLEX_CHANGED=1
+fi
+
+if [ -f /etc/linphone.conf ] && ! grep -q "^\[proxy_0\]" /etc/linphone.conf 2>/dev/null; then
+    mount -o remount,rw / 2>/dev/null
+    {
+        echo ""
+        echo "[proxy_0]"
+        echo "reg_proxy=<sip:127.0.0.1:5060;transport=tcp>"
+        echo "reg_identity=<sip:c100x@$DOMAIN>"
+        echo "reg_expires=300"
+        echo "reg_sendregister=1"
+        echo "publish=0"
+    } >> /etc/linphone.conf 2>/dev/null
+    sync
+    mount -o remount,ro / 2>/dev/null
+    grep -q "^\[proxy_0\]" /etc/linphone.conf 2>/dev/null \
+        && say "linphone: registered against the local service" \
+        || say "WARNING: could not write [proxy_0] to /etc/linphone.conf"
+fi
+
+if [ "$FLEX_CHANGED" = "1" ] || ! netstat -tln 2>/dev/null | grep -q ':5060 '; then
+    [ "$FLEX_CHANGED" = "1" ] && say "flexisip changed: restarting it" \
+                             || say "flexisip is not listening: starting it"
+    [ -f /var/run/flexisip.pid ] && kill "$(cat /var/run/flexisip.pid)" 2>/dev/null
+    i=0
+    while [ -f /var/run/flexisip.pid ] && kill -0 "$(cat /var/run/flexisip.pid 2>/dev/null)" 2>/dev/null; do
+        i=$(( i + 1 )); [ "$i" -gt 20 ] && break
+        sleep 1
+    done
+    /usr/bin/flexisip --daemon --syslog --pidfile /var/run/flexisip.pid >/dev/null 2>&1
+    i=0
+    while ! netstat -tln 2>/dev/null | grep -q ':5060 '; do
+        i=$(( i + 1 )); [ "$i" -gt 10 ] && break
+        sleep 1
+    done
+fi

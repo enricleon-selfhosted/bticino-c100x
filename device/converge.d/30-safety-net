@@ -1,0 +1,31 @@
+#!/bin/sh
+# shellcheck shell=dash
+set -u
+. "$(dirname "$0")/common.sh"
+
+NOW=$(cut -d. -f1 /proc/uptime 2>/dev/null || echo 0)
+LAST=$(cat "$EXTRA/.boot_ts" 2>/dev/null || echo 0)
+COUNT=$(cat "$EXTRA/.boot_cnt" 2>/dev/null || echo 0)
+BOOT_EPOCH=$(( $(date +%s) - NOW ))
+SINCE=$(( BOOT_EPOCH - LAST ))
+[ "$SINCE" -lt 0 ] && SINCE=$(( -SINCE ))
+if [ "$SINCE" -le 5 ] 2>/dev/null; then
+    say "same boot as the last run, so this is not a restart"
+elif [ "$SINCE" -lt 180 ] 2>/dev/null; then
+    COUNT=$(( COUNT + 1 ))
+else
+    COUNT=1
+fi
+echo "$BOOT_EPOCH" > "$EXTRA/.boot_ts" 2>/dev/null
+echo "$COUNT"      > "$EXTRA/.boot_cnt" 2>/dev/null
+if [ "$COUNT" -ge 3 ] && [ -f "$EXTRA/.aswm_orig.bin" ]; then
+    say "SAFETY NET: $COUNT restarts in a row. Putting the original binary back."
+    mount -o remount,rw / 2>/dev/null
+    cat "$EXTRA/.aswm_orig.bin" > /home/bticino/bin/bt_answering_machine 2>/dev/null
+    chmod 755 /home/bticino/bin/bt_answering_machine 2>/dev/null
+    chown bticino:bticino /home/bticino/bin/bt_answering_machine 2>/dev/null
+    sync
+    mount -o remount,ro / 2>/dev/null
+    touch "$EXTRA/.patch_disabled"
+    say "the intercom will work, but without its local phone service. Remove $EXTRA/.patch_disabled to try again."
+fi

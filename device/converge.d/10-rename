@@ -1,0 +1,11 @@
+#!/bin/sh
+# shellcheck shell=dash
+set -u
+. "$(dirname "$0")/common.sh"
+
+OLD="$EXTRA/c300x-controller"
+if [ -d "$OLD" ] && [ ! -d "$INTERCOM" ]; then
+    mv "$OLD" "$INTERCOM" 2>/dev/null && say "moved $OLD to $INTERCOM"
+elif [ -d "$OLD" ] && [ -d "$INTERCOM" ]; then
+    say "WARNING: both $OLD and $INTERCOM exist. Not touching either. Remove the one you do not want."
+fi

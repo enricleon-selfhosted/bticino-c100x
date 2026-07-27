@@ -1,0 +1,41 @@
+#!/bin/sh
+# shellcheck shell=dash
+set -u
+. "$(dirname "$0")/common.sh"
+
+# a default route in /proc/net/route means the network is up
+network_is_up() {
+    awk '$2 == "00000000" { found = 1 } END { exit found ? 0 : 1 }' /proc/net/route 2>/dev/null
+}
+
+if [ -x "$INTERCOM/run.sh" ]; then
+    (
+        waited=0
+        while ! network_is_up; do
+            waited=$(( waited + 1 ))
+            [ "$waited" -ge "$STARTUP_DELAY" ] && break
+            sleep 1
+        done
+        "$INTERCOM/run.sh"
+    ) </dev/null >/dev/null 2>&1 &
+    say "run.sh decides about the controller once there is a route out, and in ${STARTUP_DELAY}s regardless"
+else
+    say "WARNING: no $INTERCOM/run.sh, nothing to start"
+fi
+
+go2rtc_running() {
+    for c in /proc/[0-9]*/comm; do
+        read -r name < "$c" 2>/dev/null || continue
+        [ "$name" = "go2rtc" ] && return 0
+    done
+    return 1
+}
+
+if [ -x "$EXTRA/bin/go2rtc" ] && [ -f "$INTERCOM/go2rtc.yaml" ]; then
+    if go2rtc_running; then
+        say "go2rtc is already running, so it is left alone"
+    else
+        ( "$EXTRA/bin/go2rtc" -config "$INTERCOM/go2rtc.yaml" ) </dev/null >"$EXTRA/go2rtc.log" 2>&1 &
+        say "started go2rtc"
+    fi
+fi

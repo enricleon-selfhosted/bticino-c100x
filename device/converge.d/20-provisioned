@@ -1,0 +1,10 @@
+#!/bin/sh
+# shellcheck shell=dash
+set -u
+. "$(dirname "$0")/common.sh"
+
+if [ -z "$DOMAIN" ]; then
+    say "not provisioned yet: pair the unit with the Door Entry app, then restart it"
+    exit 10
+fi
+say "domain: $DOMAIN"

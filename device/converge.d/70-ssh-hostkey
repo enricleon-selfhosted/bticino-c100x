@@ -1,0 +1,42 @@
+#!/bin/sh
+# shellcheck shell=dash
+set -u
+. "$(dirname "$0")/common.sh"
+
+KEYDIR=/var/lib/dropbear
+KEEP="$EXTRA/dropbear_rsa_host_key"
+mkdir -p "$KEYDIR" 2>/dev/null
+if [ -s "$KEEP" ]; then
+    if ! cmp -s "$KEEP" "$KEYDIR/dropbear_rsa_host_key" 2>/dev/null; then
+        cat "$KEEP" > "$KEYDIR/dropbear_rsa_host_key" 2>/dev/null
+        chmod 600 "$KEYDIR/dropbear_rsa_host_key" 2>/dev/null
+        say "put the kept ssh host key back"
+    fi
+elif [ -s "$KEYDIR/dropbear_rsa_host_key" ]; then
+    cat "$KEYDIR/dropbear_rsa_host_key" > "$KEEP" 2>/dev/null
+    chmod 600 "$KEEP" 2>/dev/null
+    say "kept this unit's ssh host key so it stops changing"
+elif command -v dropbearkey >/dev/null 2>&1; then
+    if dropbearkey -t rsa -f "$KEEP" >/dev/null 2>&1; then
+        chmod 600 "$KEEP" 2>/dev/null
+        cat "$KEEP" > "$KEYDIR/dropbear_rsa_host_key" 2>/dev/null
+        chmod 600 "$KEYDIR/dropbear_rsa_host_key" 2>/dev/null
+        say "made an ssh host key and kept it"
+    fi
+fi
+
+ROOTKEY=/etc/dropbear/dropbear_rsa_host_key
+if [ -s "$KEEP" ] && ! cmp -s "$KEEP" "$ROOTKEY" 2>/dev/null; then
+    mount -o remount,rw / 2>/dev/null
+    mkdir -p /etc/dropbear 2>/dev/null
+    if cat "$KEEP" > "$ROOTKEY" 2>/dev/null; then
+        chmod 600 "$ROOTKEY" 2>/dev/null
+        sync
+        if cmp -s "$KEEP" "$ROOTKEY" 2>/dev/null; then
+            say "the copy on the read-only filesystem now holds the same ssh host key"
+        else
+            say "WARNING: could not put the ssh host key on the read-only filesystem"
+        fi
+    fi
+    mount -o remount,ro / 2>/dev/null
+fi
