@@ -1,0 +1,25 @@
+
+log:
+  level: info
+
+api:
+  listen: ":1984"
+
+rtsp:
+  listen: "127.0.0.1:8554"
+
+webrtc:
+  listen: ":8555"
+
+ffmpeg:
+  bin: /home/bticino/cfg/extra/bin/ffmpeg-speex
+  rtsp: "-fflags nobuffer -flags low_delay -analyzeduration 100000 -probesize 20000 -timeout 5000000 -user_agent go2rtc/ffmpeg -rtsp_flags prefer_tcp -i {input}"
+  rtsp_foto: "-fflags nobuffer -analyzeduration 3000000 -probesize 1000000 -timeout 15000000 -user_agent go2rtc/ffmpeg -rtsp_flags prefer_tcp -i {input}"
+
+streams:
+  camera.door:
+    - "ffmpeg:rtsp://127.0.0.1:6554/doorbell#video=copy#audio=pcma"
+    - "exec:/home/bticino/cfg/extra/bin/ffmpeg-speex -re -fflags nobuffer -f alaw -ar 8000 -i - -ar 8000 -acodec speex -f rtp -payload_type 97 rtp://127.0.0.1:40004#backchannel=1#audio=pcma/8000"
+
+  camera.door_photo:
+    - "ffmpeg:rtsp://127.0.0.1:6554/doorbell-video#input=rtsp_foto#video=copy"
