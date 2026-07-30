@@ -1,0 +1,37 @@
+open_door:
+  description: Releases the street door.
+
+pick_up:
+  description: Answers the call and shows the door.
+
+hang_up:
+  description: >-
+    Ends the call by disconnecting from the video. Hanging up means disconnecting whoever is
+    watching, because the video is the call.
+
+look:
+  description: Turns the door camera on, or off again.
+
+capture_photo:
+  description: >-
+    Grabs one frame of the door from the video already open, and keeps it as the doorbell photo.
+
+video_on_screen:
+  description: Used by the card to report whether a picture has arrived.
+  fields:
+    value:
+      description: Whether a picture is showing.
+      required: true
+      example: true
+      selector:
+        boolean:
+
+microphone_state:
+  description: Used by the card to report what the microphone is doing.
+  fields:
+    value:
+      description: What the card reports.
+      required: true
+      example: listening
+      selector:
+        text:

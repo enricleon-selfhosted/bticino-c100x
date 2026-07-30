@@ -1,0 +1,41 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Bticino Classe 100X",
+        "description": "The address of the intercom on your network. Your router's device list shows it; the name usually starts with BTICINO.",
+        "data": {
+          "host": "Address",
+          "topic": "Message subject"
+        },
+        "data_description": {
+          "host": "For example 192.168.1.50",
+          "topic": "What the intercom publishes under. Leave it as it is unless you changed it when building the firmware."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nothing answered at that address. Check the intercom is on your network and has been flashed."
+    },
+    "abort": {
+      "already_configured": "That intercom is already set up."
+    }
+  },
+  "services": {
+    "open_door": { "name": "Open the door", "description": "Releases the street door." },
+    "pick_up": { "name": "Pick up", "description": "Answers the call and shows the door." },
+    "hang_up": { "name": "Hang up", "description": "Ends the call by disconnecting from the video." },
+    "look": { "name": "Look", "description": "Turns the door camera on, or off again." },
+    "capture_photo": { "name": "Take a photo", "description": "Grabs one frame of the door." },
+    "video_on_screen": {
+      "name": "Report the video",
+      "description": "Used by the card to say whether a picture has arrived.",
+      "fields": { "value": { "name": "On screen", "description": "Whether a picture is showing." } }
+    },
+    "microphone_state": {
+      "name": "Report the microphone",
+      "description": "Used by the card to say what the microphone is doing.",
+      "fields": { "value": { "name": "State", "description": "What the card reports." } }
+    }
+  }
+}
