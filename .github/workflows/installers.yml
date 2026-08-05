@@ -1,0 +1,205 @@
+name: installers
+
+on:
+  push:
+    paths: ['install.sh', 'install.ps1', 'lib/read-config.sh', '.github/workflows/installers.yml']
+  pull_request:
+    paths: ['install.sh', 'install.ps1', 'lib/read-config.sh', '.github/workflows/installers.yml']
+  workflow_dispatch:
+
+jobs:
+  same-bytes-everywhere:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  shell: bash }
+          - { os: macos-14,       shell: bash }
+          - { os: windows-latest, shell: 'msys2 {0}' }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        with:
+          msystem: UCRT64
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
+
+      - name: Build fwz
+        run: |
+          cmake -B build tools/fwz -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release
+
+      - name: A little tree to pack
+        run: |
+          mkdir -p tree/node/bin tree/node/lib/node_modules tree/lib
+          printf 'binary\n'   > tree/node/bin/node.bin
+          printf '#!/bin/sh\n' > tree/node/bin/node
+          printf 'readme\n'   > tree/node/README.md
+          printf 'library\n'  > tree/lib/libatomic.so.1
+
+      - name: Pack it
+        run: |
+          FWZ=build/fwz; [ -x "$FWZ" ] || FWZ=build/fwz.exe; [ -x "$FWZ" ] || FWZ=build/Release/fwz.exe
+          "$FWZ" pack --root tree --out packed.tar.gz \
+                 --exec node/bin/node --exec node/bin/node.bin
+          if command -v sha256sum >/dev/null; then sha256sum packed.tar.gz; else shasum -a 256 packed.tar.gz; fi
+
+      - name: It must be this exact file
+        run: |
+          want=472e8f84ed8f83e0da66f2ddc1137d9b7e0f650df40e5904f212311fd391fc6e
+          if command -v sha256sum >/dev/null; then got=$(sha256sum packed.tar.gz | cut -d' ' -f1)
+          else got=$(shasum -a 256 packed.tar.gz | cut -d' ' -f1); fi
+          echo "got  $got"
+          echo "want $want"
+          [ "$got" = "$want" ] || { echo "packing does not give the same bytes on this system"; exit 1; }
+
+      - name: An ordinary tar reads it
+        run: |
+          tar tzvf packed.tar.gz
+          tar tzf packed.tar.gz > /dev/null
+
+  same-answers:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: An answers file worth arguing about
+        shell: bash
+        run: |
+          cat > fixture.yaml <<'EOF'
+
+          mqtt:
+            host: "10.0.0.5"
+            port: "1883"
+            username: ""
+            password: "p a s s"
+            topic: bticinocontroller
+
+          device:
+            model: "C100X"
+            root_password: "aB3dE6gH9jK2mN5p"
+            ssh_public_key: "ssh-ed25519 AAAAC3Nz key@machine"
+            startup_delay: "60"
+
+          video:
+            fmtp: "packetization-mode=1;profile-level-id=42401E"
+          EOF
+          cat > keys.txt <<'EOF'
+          mqtt.host
+          mqtt.port
+          mqtt.username
+          mqtt.password
+          mqtt.topic
+          device.model
+          device.root_password
+          device.ssh_public_key
+          device.startup_delay
+          video.fmtp
+          device.absent_on_purpose
+          EOF
+          cat fixture.yaml keys.txt
+
+      - name: What the shell installer reads
+        shell: bash
+        run: |
+          : > from-shell.txt
+          while read -r key; do
+            printf '%s=[%s]\n' "$key" "$(sh lib/read-config.sh fixture.yaml "$key")" >> from-shell.txt
+          done < keys.txt
+          cat from-shell.txt
+
+      - name: What the Windows installer reads
+        shell: pwsh
+        run: |
+          $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+                     (Resolve-Path 'install.ps1'), [ref]$null, [ref]$null)
+          $fn = $ast.Find({
+                    param($n)
+                    $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $n.Name -eq 'Read-ConfigFile'
+                }, $true)
+          if (-not $fn) { throw 'install.ps1 has no Read-ConfigFile any more' }
+          Invoke-Expression $fn.Extent.Text
+
+          $map = Read-ConfigFile 'fixture.yaml'
+          $out = foreach ($key in (Get-Content 'keys.txt')) {
+              $v = if ($map.ContainsKey($key)) { $map[$key] } else { '' }
+              "$key=[$v]"
+          }
+          $out | Set-Content -Path 'from-windows.txt' -Encoding utf8
+          Get-Content 'from-windows.txt'
+
+      - name: They must agree, line for line
+        shell: bash
+        run: |
+          tr -d '\r' < from-windows.txt > a.txt
+          tr -d '\r' < from-shell.txt   > b.txt
+          if ! diff -u b.txt a.txt; then
+            echo
+            echo "The two installers read the same file differently."
+            echo "Left is install.sh, right is install.ps1."
+            exit 1
+          fi
+          echo "both read all $(wc -l < b.txt) answers the same way"
+
+      - name: The Windows installer writes an answers file
+        shell: pwsh
+        run: |
+          $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+                     (Resolve-Path 'install.ps1'), [ref]$null, [ref]$null)
+          $fn = $ast.Find({
+                    param($n)
+                    $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $n.Name -eq 'Write-Config'
+                }, $true)
+          if (-not $fn) { throw 'install.ps1 has no Write-Config any more' }
+          Invoke-Expression $fn.Extent.Text
+
+          $Config = Join-Path (Get-Location) 'roundtrip.yaml'
+          $given  = @{
+              'mqtt.host'             = '10.0.0.5'
+              'mqtt.username'         = ''
+              'mqtt.password'         = 'p a s s'
+              'device.model'          = 'C100X'
+              'device.root_password'  = 'aB3dE6gH9jK2mN5p'
+              'device.ssh_public_key' = 'ssh-ed25519 AAAAC3Nz key@machine'
+              'video.fmtp'            = 'packetization-mode=1;profile-level-id=42401E'
+          }
+          Write-Config
+          Get-Content $Config
+
+      - name: The shell installer reads it back unchanged
+        shell: bash
+        run: |
+          if head -c 3 roundtrip.yaml | od -An -tx1 | grep -q 'ef bb bf'; then
+            echo "roundtrip.yaml starts with a byte order mark"
+            exit 1
+          fi
+          if grep -q $'\r' roundtrip.yaml; then
+            echo "roundtrip.yaml has Windows line endings"
+            exit 1
+          fi
+
+          fail=0
+          check() {
+            got=$(sh lib/read-config.sh roundtrip.yaml "$1")
+            if [ "$got" != "$2" ]; then
+              echo "  $1: wanted [$2], read [$got]"
+              fail=1
+            else
+              echo "  $1 = [$got]"
+            fi
+          }
+          check mqtt.host             '10.0.0.5'
+          check mqtt.username         ''
+          check mqtt.password         'p a s s'
+          check device.model          'C100X'
+          check device.root_password  'aB3dE6gH9jK2mN5p'
+          check device.ssh_public_key 'ssh-ed25519 AAAAC3Nz key@machine'
+          check video.fmtp            'packetization-mode=1;profile-level-id=42401E'
+          [ "$fail" = 0 ] || { echo; echo "what install.ps1 wrote, install.sh cannot read"; exit 1; }

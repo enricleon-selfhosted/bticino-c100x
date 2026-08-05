@@ -1,0 +1,195 @@
+name: binaries
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths: ['tools/fwz/**', 'tools/ffmpeg-speex/**', '.github/workflows/build-fwz.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  name: fwz-linux-x64,     runner_arch: x64,   shell: bash }
+          - { os: ubuntu-24.04-arm, name: fwz-linux-arm64, runner_arch: arm64, shell: bash }
+          - { os: macos-15-intel, name: fwz-macos-x64,     runner_arch: x64,   shell: bash }
+          - { os: macos-14,       name: fwz-macos-arm64,   runner_arch: arm64, shell: bash }
+          - { os: windows-latest, name: fwz-windows-x64,   runner_arch: x64, ext: .exe, shell: 'msys2 {0}' }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        with:
+          msystem: UCRT64
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
+
+      - name: Build
+        run: |
+          cmake -B build tools/fwz -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release -j
+
+      - name: Find it
+        shell: bash
+        run: |
+          for p in build/fwz${{ matrix.ext }} build/Release/fwz${{ matrix.ext }}; do
+            [ -f "$p" ] && { cp "$p" "${{ matrix.name }}${{ matrix.ext }}"; break; }
+          done
+          ls -l "${{ matrix.name }}${{ matrix.ext }}"
+
+      - name: Check it works
+        shell: bash
+        run: |
+          ./${{ matrix.name }}${{ matrix.ext }} version
+          got=$(./${{ matrix.name }}${{ matrix.ext }} passwd root ci-test-vector)
+          want='$1$root$cwiwKPMUgVwoYduAZDpv3.'
+          echo "got  $got"
+          if [ "$got" != "$want" ]; then
+            echo "the password hash differs on this system -- wanted $want"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}${{ matrix.ext }}
+
+  endtoend:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: fwz-linux-x64 }
+      - name: Build a firmware and check it with other people's tools
+        run: |
+          chmod +x fwz-linux-x64
+          curl -fsSL -o stock.fwz "$(sh -c '. firmware/steps/firmware-versions.sh; firmware_url C100X 1.5.8')"
+          mkdir -p payload/payload payload/converge.d work
+          : > payload/setup.sh; : > payload/setup.conf; : > payload/payload/bundle.js
+          printf '#!/bin/sh\n' > payload/converge.d/50-step
+          HASH=$(./fwz-linux-x64 passwd root test)
+          firmware/steps/write-changes.sh payload firmware/overlay "ssh-ed25519 AAAA test" "$HASH" > changes.txt
+          ./fwz-linux-x64 build --in stock.fwz --out out.fwz --model C100X --changes changes.txt --work work
+
+          unzip -t -P C100X out.fwz
+          unzip -o -q -P C100X out.fwz btweb_only.ext4.gz && gunzip -f btweb_only.ext4.gz
+          e2fsck -fn btweb_only.ext4
+          debugfs -R "cat /etc/passwd" btweb_only.ext4 2>/dev/null | grep -q root2
+          debugfs -R "stat /etc/rc5.d/S97setup" btweb_only.ext4 2>/dev/null | grep -q "Type: symlink"
+          echo "the firmware reads back correctly"
+
+  agree:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Both installers must write the same instructions
+        shell: bash
+        run: |
+          mkdir -p payload/payload payload/converge.d
+          : > payload/setup.sh; : > payload/setup.conf
+          : > payload/payload/bundle.js; : > payload/payload/run.sh
+          printf '#!/bin/sh\n' > payload/converge.d/50-step
+          KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 test@example"
+          HASH='$1$abc$0123456789abcdefghijk.'
+          firmware/steps/write-changes.sh payload firmware/overlay "$KEY" "$HASH" > from-sh.txt
+
+          pwsh -NoProfile -Command "
+            . { \$Root = '.' }
+            \$src = Get-Content install.ps1 -Raw
+            \$fn = [regex]::Match(\$src, '(?s)function Write-Ops.*?\n}\n').Value
+            Invoke-Expression \$fn
+            Write-Ops 'payload' 'firmware/overlay' '$KEY' '$HASH' 'from-ps1.txt'
+          "
+
+          if diff -u from-sh.txt from-ps1.txt; then
+            echo "both installers agree"
+          else
+            echo "install.sh and install.ps1 have drifted apart"
+            exit 1
+          fi
+
+  ffmpeg-speex:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  shell: bash }
+          - { os: macos-14,       shell: bash }
+          - { os: windows-latest, shell: 'msys2 {0}' }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        with:
+          msystem: UCRT64
+          install: make unzip
+      - name: Build
+        run: OUT="$PWD/out" tools/ffmpeg-speex/build.sh
+      - name: Say what came out
+        run: |
+          if command -v sha256sum >/dev/null; then sha256sum out/ffmpeg-speex-linux-armv7
+          else shasum -a 256 out/ffmpeg-speex-linux-armv7; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-from-${{ matrix.os }}
+          path: out/ffmpeg-speex-linux-armv7
+
+  ffmpeg-verify:
+    needs: ffmpeg-speex
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { pattern: 'ffmpeg-from-*', path: builds }
+      - name: Every build runs, and carries Speex
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-user-static file
+          for b in builds/*/ffmpeg-speex-linux-armv7; do
+            echo "== $b"
+            sha256sum "$b"
+            file "$b" | grep -q "ARM"
+            chmod +x "$b"
+            qemu-arm-static "$b" -hide_banner -encoders | grep -q libspeex
+          done
+          echo "all three run and encode Speex"
+      - name: The Linux build is the one the manifest pins
+        run: |
+          want=$(grep '^ffmpeg-speex|' firmware/steps/runtime.manifest | cut -d'|' -f5)
+          got=$(sha256sum builds/ffmpeg-from-ubuntu-latest/ffmpeg-speex-linux-armv7 | cut -d' ' -f1)
+          echo "want $want"
+          echo "got  $got"
+          [ "$want" = "$got" ] || { echo "the manifest pins a different file than this build produces"; exit 1; }
+          cp builds/ffmpeg-from-ubuntu-latest/ffmpeg-speex-linux-armv7 ffmpeg-speex-linux-armv7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-speex-linux-armv7
+          path: ffmpeg-speex-linux-armv7
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, endtoend, agree, ffmpeg-verify]
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - name: Checksums
+        run: |
+          cd dist && sha256sum * > sha256sums.txt && cat sha256sums.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true

@@ -1,0 +1,46 @@
+name: HACS
+
+on:
+  push:
+    paths: ['custom_components/**', 'hacs.json', '.github/workflows/hacs.yml']
+  pull_request:
+    paths: ['custom_components/**', 'hacs.json', '.github/workflows/hacs.yml']
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+env:
+  CARDS: custom_components/bticino_c100x/www/bticino-c100x-cards.js
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: HACS validation
+        uses: hacs/action@main
+        with:
+          category: integration
+          ignore: brands
+
+      - name: Home Assistant's own check on the manifest
+        uses: home-assistant/actions/hassfest@master
+
+      - name: The cards still register under their own names
+        run: |
+          for card in intercom-button intercom-video; do
+            grep -q "customElements.define('$card'" "$CARDS" \
+              || { echo "$card is no longer registered"; exit 1; }
+            echo "  $card"
+          done
+
+      - name: And the cards are still valid JavaScript
+        run: node --check "$CARDS"
+
+      - name: The card and the integration agree on the signalling address
+        run: |
+          grep -q "/api/bticino_c100x/ws" "$CARDS" \
+            || { echo "the card no longer asks for the address this integration serves"; exit 1; }
+          grep -q 'f"/api/{DOMAIN}/ws"' custom_components/bticino_c100x/webrtc.py \
+            || { echo "the integration no longer serves it"; exit 1; }
