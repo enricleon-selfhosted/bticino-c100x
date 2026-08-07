@@ -43,7 +43,8 @@ which is what gives it a phone identity.
 
 Then add the integration through HACS — three dots, Custom repositories, this repository,
 category **Integration** — and add **Bticino Classe 100X** under Settings, Devices and
-services with the intercom's address.
+services with the intercom's address. The MQTT topic is asked for too and is
+already filled in.
 
 ## Use
 
@@ -52,7 +53,12 @@ wherever you like:
 
 ```yaml
 type: custom:intercom-video
+connect_entity: binary_sensor.intercom_connect_video
+talk_entity: binary_sensor.intercom_picked_up
 ```
+
+`connect_entity` is what tells the card when to open the video. Without it the card
+connects whenever it is on screen, which keeps the intercom in a call.
 
 ```yaml
 type: custom:intercom-button
@@ -63,10 +69,11 @@ tap_action:
   service: bticino_c100x.open_door
 ```
 
-For a doorbell notification, trigger an automation on
-`binary_sensor.intercom_ringing` and send it to your phone. The photo of the ring is at
-`/bticino_c100x/media/doorbell_last.jpg`, and a notification action named `OPEN_DOOR`
-opens the door.
+For a doorbell notification, trigger an automation on `binary_sensor.intercom_ringing`
+and send it to your phone. The photo is taken a few seconds into the ring, so send the
+message first and the photo in a second notification carrying the same `tag`, which
+replaces it. The photo is at `/bticino_c100x/media/doorbell_last.jpg`, and a notification
+action named `OPEN_DOOR` opens the door.
 
 [Full walkthrough](docs/tutorial.md)
 

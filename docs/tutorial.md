@@ -92,8 +92,8 @@ ps -ef | grep [b]undle.js
 Install this repository through HACS: three dots, Custom repositories, this repository's
 address, category **Integration**. Restart Home Assistant.
 
-Then Settings → Devices and services → Add integration → **Bticino Classe 100X**, and give
-it the intercom's address.
+Then Settings → Devices and services → Add integration → **Bticino Classe 100X**. It asks
+for the intercom's address, and for the MQTT topic, which is already filled in.
 
 That brings in the sensors, the buttons, the doorbell photo, the two dashboard cards and
 the live video together. In **Developer tools → States** these exist:
@@ -121,34 +121,97 @@ The cards arrive with the integration. Add them to any dashboard:
 
 ```yaml
 type: custom:intercom-video
+connect_entity: binary_sensor.intercom_connect_video
+talk_entity: binary_sensor.intercom_picked_up
+```
+
+`connect_entity` tells the card when to open the video, and `talk_entity` when to add your
+microphone. Without `connect_entity` the card connects whenever it is on screen, which
+keeps the intercom in a call.
+
+A button per action. `tap_action` takes any of the integration's services:
+
+```yaml
+type: custom:intercom-button
+name: Answer
+icon: mdi:phone-in-talk
+color: green
+entity: binary_sensor.intercom_green_colour
+blink_entity: binary_sensor.intercom_ready_to_answer
+enabled_entity: binary_sensor.intercom_ready_to_answer
+done_on: binary_sensor.intercom_picked_up
+tap_action:
+  service: bticino_c100x.pick_up
 ```
 
 ```yaml
 type: custom:intercom-button
 name: Open
 icon: mdi:door-open
-color: green
+color: white
 tap_action:
   service: bticino_c100x.open_door
 ```
 
+`entity` colours it, `blink_entity` makes it pulse, `enabled_entity` greys it out when the
+action makes no sense, and `done_on` / `done_off` end the pressed state when the intercom
+confirms. The services are `open_door`, `pick_up`, `hang_up`, `look` and `capture_photo`.
+
 ## 7. Make the notification
 
-Settings → Automations → Create automation:
+The integration fires nothing at your phone by itself, because only you know which phone.
+Two automations do it: one that buzzes immediately, and one that follows with the photo.
 
-- **When:** `binary_sensor.intercom_ringing` turns on
-- **Then:** send a notification to your phone
-
-For the photo, add `image: /bticino_c100x/media/doorbell_last.jpg` to the notification data
-on Android, or on iPhone:
+The photo is taken a few seconds into the ring, so attaching it to the first notification
+would send the previous ring's picture. Instead both notifications carry the same `tag`,
+and the second replaces the first on the screen.
 
 ```yaml
-attachment:
-  url: /bticino_c100x/media/doorbell_last.jpg
-  content-type: jpeg
+- alias: Doorbell notification
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.intercom_ringing
+    to: 'on'
+  actions:
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "Front door"
+      message: "Someone is at the door"
+      data:
+        tag: doorbell
+        actions:
+        - action: OPEN_DOOR
+          title: Open the door
+
+- alias: Doorbell photo
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.intercom_ringing
+    to: 'on'
+  actions:
+  - wait_for_trigger:
+    - trigger: state
+      entity_id: image.intercom_doorbell_photo
+    timeout: '00:00:20'
+    continue_on_timeout: true
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "Front door"
+      message: "Someone is at the door"
+      data:
+        tag: doorbell
+        image: "/bticino_c100x/media/doorbell_last.jpg?v={{ now().timestamp() | int }}"
+        attachment:
+          url: "/bticino_c100x/media/doorbell_last.jpg?v={{ now().timestamp() | int }}"
+          content-type: jpeg
+        actions:
+        - action: OPEN_DOOR
+          title: Open the door
 ```
 
-To open the door from the notification, give it an action named `OPEN_DOOR`.
+An iPhone reads `attachment`, an Android phone `image`; each ignores the other. The query
+string keeps the phone from showing a cached picture. Tapping **Open the door** opens it:
+the integration listens for the `OPEN_DOOR` action itself.
 
 ## What cutting the cloud does
 
