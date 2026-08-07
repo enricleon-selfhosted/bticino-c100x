@@ -7,7 +7,7 @@ network, and adds the Home Assistant integration that uses them.
 For anyone with a Classe 100X, an MQTT broker and a Home Assistant instance.
 
 ## Requirements
-| | |
+| Where | Description |
 |---|---|
 | Intercom | Classe 100X, firmware 1.5.8 (other 1.5.x likely) |
 | Home Assistant | 2024.7 or newer, with an MQTT broker |
