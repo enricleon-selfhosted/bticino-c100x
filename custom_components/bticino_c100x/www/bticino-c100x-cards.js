@@ -1,4 +1,4 @@
-// config: name, icon, color, tap_action, entity, users
+// config: name, icon, color, tap_action, entity
 class IntercomButton extends HTMLElement {
   setConfig(c) {
     this._c = c || {};
@@ -99,10 +99,6 @@ class IntercomButton extends HTMLElement {
   _render() {
     if (!this._el || !this._hass) return;
     const c = this._c;
-    if (c.users && c.users.length) {
-      const uid = this._hass.user && this._hass.user.id;
-      this.style.display = c.users.includes(uid) ? '' : 'none';
-    }
     if (this._phase === 'busy') {
       if ((c.done_on && this._on(c.done_on)) || (c.done_off && this._st(c.done_off) === 'off')) {
         this._toDone();
