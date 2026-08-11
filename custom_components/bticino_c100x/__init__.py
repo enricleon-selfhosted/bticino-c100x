@@ -47,7 +47,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if not hass.data.get(REGISTERED):
         hass.data[REGISTERED] = True
-        await _async_register_once(hass)
+        try:
+            await _async_register_once(hass)
+        except Exception:
+            hass.data[REGISTERED] = False
+            raise
 
     _register_services(hass)
     return True
@@ -72,20 +76,52 @@ async def _async_register_once(hass: HomeAssistant) -> None:
     if not os.path.isdir(source):
         return
 
-    paths = [(f"/{DOMAIN}", source), (MEDIA_URL, media)]
+    # The card URL is versioned so it can be cached; the media dir holds the
+    # doorbell photo, which is overwritten in place and must not be.
+    paths = [(f"/{DOMAIN}", source, True), (MEDIA_URL, media, False)]
     try:
         from homeassistant.components.http import StaticPathConfig
 
         await hass.http.async_register_static_paths(
-            [StaticPathConfig(url, path, cache_headers=False) for url, path in paths]
+            [StaticPathConfig(url, path, cache) for url, path, cache in paths]
         )
     except ImportError:
-        for url, path in paths:
-            hass.http.register_static_path(url, path, cache_headers=False)
+        for url, path, cache in paths:
+            hass.http.register_static_path(url, path, cache)
 
-    from homeassistant.components.frontend import add_extra_js_url
+    # A Lovelace resource is awaited before cards are built; add_extra_js_url
+    # is a fire-and-forget import the dashboard does not wait for, so it is
+    # only the fallback when resources cannot be written (YAML mode, old HA).
+    if not await _async_register_card_resource(hass):
+        from homeassistant.components.frontend import add_extra_js_url
 
-    add_extra_js_url(hass, CARD_URL)
+        add_extra_js_url(hass, CARD_URL)
+
+async def _async_register_card_resource(hass: HomeAssistant) -> bool:
+    """Put the card in Lovelace's resource list. True when it is there."""
+    try:
+        from homeassistant.components.lovelace.const import LOVELACE_DATA
+        from homeassistant.loader import async_get_integration
+
+        resources = getattr(hass.data.get(LOVELACE_DATA), "resources", None)
+        if resources is None or not hasattr(resources, "async_create_item"):
+            return False
+        if not resources.loaded:
+            await resources.async_load()
+            resources.loaded = True
+
+        version = (await async_get_integration(hass, DOMAIN)).version
+        url = f"{CARD_URL}?v={version}"
+        for item in resources.async_items():
+            if item["url"].split("?")[0] == CARD_URL:
+                if item["url"] != url:
+                    await resources.async_update_item(item["id"], {"url": url})
+                return True
+        await resources.async_create_item({"res_type": "module", "url": url})
+        return True
+    except Exception:
+        _LOGGER.warning("Could not add the card to the dashboard resources", exc_info=True)
+        return False
 
 def _register_services(hass: HomeAssistant) -> None:
     """The things you can ask the intercom to do."""

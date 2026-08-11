@@ -117,7 +117,17 @@ Press the button downstairs:
 
 ## 6. Place the cards
 
-The cards arrive with the integration. Add them to any dashboard:
+The cards arrive with the integration and register themselves as a dashboard resource.
+Dashboards managed in YAML need it added by hand:
+
+```yaml
+lovelace:
+  resources:
+    - url: /bticino_c100x/bticino-c100x-cards.js
+      type: module
+```
+
+Add them to any dashboard:
 
 ```yaml
 type: custom:intercom-video

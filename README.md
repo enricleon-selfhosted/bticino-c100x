@@ -48,8 +48,18 @@ already filled in.
 
 ## Use
 
-The integration brings 19 entities, seven services and two dashboard cards. Put the cards
-wherever you like:
+The integration brings 19 entities, seven services and two dashboard cards. The cards
+register themselves as a dashboard resource; dashboards managed in YAML need it added
+by hand:
+
+```yaml
+lovelace:
+  resources:
+    - url: /bticino_c100x/bticino-c100x-cards.js
+      type: module
+```
+
+Put the cards wherever you like:
 
 ```yaml
 type: custom:intercom-video

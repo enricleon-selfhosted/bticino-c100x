@@ -1,6 +1,9 @@
 {
   "domain": "bticino_c100x",
   "name": "Bticino Classe 100X, local control",
+  "after_dependencies": [
+    "lovelace"
+  ],
   "codeowners": [
     "@enricleon-selfhosted"
   ],
@@ -14,5 +17,5 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/enricleon-selfhosted/bticino-c100x/issues",
   "requirements": [],
-  "version": "1.0.0"
+  "version": "1.0.1"
 }
