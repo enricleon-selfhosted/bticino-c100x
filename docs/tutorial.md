@@ -210,18 +210,20 @@ and the second replaces the first on the screen.
       message: "Someone is at the door"
       data:
         tag: doorbell
-        image: "/bticino_c100x/media/doorbell_last.jpg?v={{ now().timestamp() | int }}"
+        image: "/bticino_c100x/media/doorbell_last.jpg"
         attachment:
-          url: "/bticino_c100x/media/doorbell_last.jpg?v={{ now().timestamp() | int }}"
+          url: "/bticino_c100x/media/doorbell_last.jpg"
           content-type: jpeg
         actions:
         - action: OPEN_DOOR
           title: Open the door
 ```
 
-An iPhone reads `attachment`, an Android phone `image`; each ignores the other. The query
-string keeps the phone from showing a cached picture. Tapping **Open the door** opens it:
-the integration listens for the `OPEN_DOOR` action itself.
+An iPhone reads `attachment`, an Android phone `image`; each ignores the other. Keep the
+path bare: the photo is served with caching disabled, so a cache-buster adds nothing —
+and the iOS app percent-encodes `?` in relative attachment paths, turning the query into
+a filename that 404s. Tapping **Open the door** opens it: the integration listens for
+the `OPEN_DOOR` action itself.
 
 ## What cutting the cloud does
 
