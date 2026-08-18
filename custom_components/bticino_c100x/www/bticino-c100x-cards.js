@@ -442,6 +442,7 @@ class IntercomCallLog extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         :host { display: block; }
+        [hidden] { display: none !important; }
         .card {
           box-sizing: border-box; overflow: hidden;
           background: var(--ha-card-background, var(--card-background-color, #1c1c1c));
