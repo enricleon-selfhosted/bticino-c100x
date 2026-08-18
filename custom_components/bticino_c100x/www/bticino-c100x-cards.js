@@ -425,25 +425,20 @@ class IntercomVideo extends HTMLElement {
 customElements.define('intercom-video', IntercomVideo);
 window.customCards.push({ type: 'intercom-video', name: 'Intercom Video', description: 'The intercom video, with the loading centred' });
 
-// Cards have no official translation channel, so like the big HACS cards
-// (mini-media-player, Mushroom) the dictionary ships in the card and the
-// instance's language setting picks the entry. English is the fallback.
+// The card ships its keys in English only; translating is the dashboard's
+// job, by providing values for these keys under the card's `labels` option.
+// Dates and times already follow the instance's language on their own.
 const CALL_LOG_TEXT = {
-  en: { answered: 'Answered', missed: 'Missed',
-        opened: 'Door opened', not_opened: 'Door not opened',
-        today: 'Today', yesterday: 'Yesterday', empty: 'No calls yet' },
-  es: { answered: 'Contestada', missed: 'Perdida',
-        opened: 'Puerta abierta', not_opened: 'Puerta sin abrir',
-        today: 'Hoy', yesterday: 'Ayer', empty: 'Sin llamadas' },
-  ca: { answered: 'Contestada', missed: 'Perduda',
-        opened: 'Porta oberta', not_opened: 'Porta sense obrir',
-        today: 'Avui', yesterday: 'Ahir', empty: 'Encara no hi ha trucades' },
+  answered: 'Answered', missed: 'Missed',
+  opened: 'Door opened', not_opened: 'Door not opened',
+  today: 'Today', yesterday: 'Yesterday', empty: 'No calls yet',
 };
 
-// config: limit
+// config: limit, labels (any CALL_LOG_TEXT key, e.g. labels: {missed: Perduda})
 class IntercomCallLog extends HTMLElement {
   setConfig(c) {
     this._c = c || {};
+    this._t = Object.assign({}, CALL_LOG_TEXT, this._c.labels || {});
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
     this.shadowRoot.innerHTML = `
       <style>
@@ -531,7 +526,6 @@ class IntercomCallLog extends HTMLElement {
     this._hass = h;
     if (first) {
       this._lang = h.selectedLanguage || h.language || 'en';
-      this._t = CALL_LOG_TEXT[this._lang.split('-')[0]] || CALL_LOG_TEXT.en;
       this._start();
     }
     // no render here: the card reads no entity state, so the hass churn is noise
@@ -570,7 +564,7 @@ class IntercomCallLog extends HTMLElement {
     if (!list.length) {
       const empty = document.createElement('div');
       empty.className = 'empty';
-      empty.textContent = (this._t || CALL_LOG_TEXT.en).empty;
+      empty.textContent = this._t.empty;
       this._rows.appendChild(empty);
       return;
     }

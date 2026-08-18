@@ -175,9 +175,21 @@ type: custom:intercom-call-log
 
 Every ring becomes an entry with its photo, answered or missed, and whether the door was
 opened; tapping one shows the photo full size. `limit` (default 10) is optional. The
-last 50 calls are kept, and a heading is yours to add like on any other card. Texts
-follow the instance's language (English, Spanish and Catalan shipped, English the
-fallback) — a bundled dictionary, the same way the established HACS cards do it.
+last 50 calls are kept, and a heading is yours to add like on any other card. The
+card speaks English; translating is the dashboard's job, by overriding any of its
+keys — dates already follow the instance's language:
+
+```yaml
+type: custom:intercom-call-log
+labels:
+  answered: Contestada
+  missed: Perduda
+  opened: Porta oberta
+  not_opened: Porta sense obrir
+  today: Avui
+  yesterday: Ahir
+  empty: Encara no hi ha trucades
+```
 
 ## 7. Make the notification
 
