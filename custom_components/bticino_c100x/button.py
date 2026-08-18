@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
-from homeassistant.components.persistent_notification import async_create
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -25,6 +24,3 @@ class OpenStreetDoor(IntercomEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         await self.hub.async_open_door()
-        async_create(
-            self.hass, "The street door was opened from Home Assistant.", title="Intercom"
-        )

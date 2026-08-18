@@ -89,7 +89,6 @@ class IntercomHub:
             await mqtt.async_subscribe(self.hass, f"{self.topic}/status", self._on_status),
             await mqtt.async_subscribe(self.hass, f"{self.topic}/all_events", self._on_event),
             await mqtt.async_subscribe(self.hass, f"{self.topic}/doorbell", self._on_doorbell),
-            await mqtt.async_subscribe(self.hass, f"{self.topic}/lock/+", self._on_lock),
         ]
 
     @callback
@@ -167,14 +166,6 @@ class IntercomHub:
         """The controller decodes the bus; a ring arrives here already named."""
         if message.payload == "pressed":
             self._ring_started()
-
-    @callback
-    def _on_lock(self, message: ReceiveMessage) -> None:
-        """The controller decodes the lock traffic; this only hears the verdict."""
-        if message.payload == "unlocked":
-            persistent_notification.async_create(
-                self.hass, "The street door was opened.", title="Intercom"
-            )
 
     @callback
     def _ring_started(self) -> None:
@@ -291,7 +282,11 @@ class IntercomHub:
         self._changed()
 
     async def async_open_door(self) -> None:
+        """Release the street door, whichever way it was asked for."""
         await self._command("/unlock", id="default")
+        persistent_notification.async_create(
+            self.hass, "The street door was opened from Home Assistant.", title="Intercom"
+        )
 
     async def async_set_silenced(self, silenced: bool) -> None:
         self.silenced = silenced
