@@ -434,7 +434,7 @@ const CALL_LOG_TEXT = {
   today: 'Today', yesterday: 'Yesterday', empty: 'No calls yet',
 };
 
-// config: limit, labels (any CALL_LOG_TEXT key, e.g. labels: {missed: Perduda})
+// config: limit, labels (any CALL_LOG_TEXT key, e.g. labels: {missed: Manquée})
 class IntercomCallLog extends HTMLElement {
   setConfig(c) {
     this._c = c || {};

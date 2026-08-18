@@ -182,13 +182,13 @@ keys — dates already follow the instance's language:
 ```yaml
 type: custom:intercom-call-log
 labels:
-  answered: Contestada
-  missed: Perduda
-  opened: Porta oberta
-  not_opened: Porta sense obrir
-  today: Avui
-  yesterday: Ahir
-  empty: Encara no hi ha trucades
+  answered: Répondu
+  missed: Manqué
+  opened: Porte ouverte
+  not_opened: Porte fermée
+  today: Aujourd'hui
+  yesterday: Hier
+  empty: Pas encore d'appels
 ```
 
 ## 7. Make the notification

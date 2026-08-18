@@ -93,8 +93,8 @@ language on their own:
 ```yaml
 type: custom:intercom-call-log
 labels:
-  answered: Contestada
-  missed: Perduda
+  answered: Répondu
+  missed: Manqué
 ```
 
 For a doorbell notification, trigger an automation on `binary_sensor.intercom_ringing`
