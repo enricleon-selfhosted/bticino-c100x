@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import uuid
 from typing import Any, Callable
 
 import aiohttp
@@ -13,12 +15,22 @@ from homeassistant.components.mqtt.models import ReceiveMessage
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 from homeassistant.util.json import json_loads_object
 
 from .const import (
+    BUS_DOOR_OPENED,
     BUS_IDLE,
     BUS_RING_STATES,
     BUS_STAIRCASE_LIGHT,
+    BUS_TALK,
+    CALL_DEADLINE,
+    CALL_GRACE,
+    CALL_LOG_LIMIT,
+    CALLS_DIRNAME,
+    DOMAIN,
+    EVENT_CALL_LOG,
     EVENT_RING,
     MEDIA_DIRNAME,
     PHOTO_FILENAME,
@@ -61,6 +73,12 @@ class IntercomHub:
         self.microphone = ""
         self.photo: bytes | None = None
 
+        self.calls: list[dict] = []  # oldest first; readers reverse it
+        self._store: Store | None = None
+        self._current_call: dict | None = None  # the open record, while a ring window lasts
+        self._call_grace: Callable[[], None] | None = None
+        self._call_deadline: Callable[[], None] | None = None
+
         self._status_alive = False
         self._expiry: Callable[[], None] | None = None
         self._unsubscribe: list[Callable[[], None]] = []
@@ -91,6 +109,12 @@ class IntercomHub:
             await mqtt.async_subscribe(self.hass, f"{self.topic}/doorbell", self._on_doorbell),
         ]
 
+    async def async_load_calls(self, key: str) -> None:
+        """Load the call history; one store per config entry."""
+        self._store = Store(self.hass, 1, f"{DOMAIN}.calls.{key}")
+        data = await self._store.async_load()
+        self.calls = data["calls"] if data else []
+
     @callback
     def async_stop(self) -> None:
         for unsubscribe in self._unsubscribe:
@@ -99,6 +123,7 @@ class IntercomHub:
         if self._expiry:
             self._expiry()
             self._expiry = None
+        self._record_close()
 
     @callback
     def _on_state(self, message: ReceiveMessage) -> None:
@@ -107,6 +132,8 @@ class IntercomHub:
 
         if self.bus_state in BUS_RING_STATES:
             self._ring_started()
+        if self.bus_state == BUS_TALK:
+            self._record_flag("answered")  # a handset answered, wherever it hangs
         if was_in_call and not self.call_in_progress:
             self._call_ended()
         self._changed()
@@ -159,6 +186,11 @@ class IntercomHub:
             persistent_notification.async_create(
                 self.hass, "The staircase light was switched on.", title="Intercom"
             )
+        # The riser is shared: a neighbour releasing the door produces the same
+        # frame. Only counting it while our own call window is open makes a
+        # coincidence rare instead of daily.
+        if self.last_bus_message.startswith(BUS_DOOR_OPENED):
+            self._record_flag("door_opened")
         self._changed()
 
     @callback
@@ -166,6 +198,11 @@ class IntercomHub:
         """The controller decodes the bus; a ring arrives here already named."""
         if message.payload == "pressed":
             self._ring_started()
+        elif message.payload == "idle" and self.ringing and self.idle:
+            # A ring seen only on this topic never moves bus_state, so this is
+            # the only end signal it gets; without it, ringing stays on forever.
+            self._call_ended()
+        self._changed()
 
     @callback
     def _ring_started(self) -> None:
@@ -173,6 +210,7 @@ class IntercomHub:
         if self.ringing:
             return
         self.ringing = True
+        self._record_open()
         self.hass.bus.async_fire(EVENT_RING, {"host": self.host})
         self.hass.async_create_task(self._show_the_door())
         self.hass.async_create_task(self._photo_of_the_ring())
@@ -208,6 +246,80 @@ class IntercomHub:
         self.hanging_up = False
         self.connecting = False
         self.view = VIEW_OFF
+        if self._current_call and not self._call_grace:
+            # a door opened or a handset answered just after counts for this call
+            self._call_grace = async_call_later(self.hass, CALL_GRACE, self._grace_over)
+
+    @callback
+    def _record_open(self) -> None:
+        """A ring starts a fresh record; one still open from the grace window ends."""
+        self._record_close()
+        self._current_call = {
+            "id": uuid.uuid4().hex,
+            "ts": dt_util.utcnow().isoformat(),
+            "answered": False,
+            "door_opened": False,
+            "photo": None,
+        }
+        self.calls.append(self._current_call)
+        dropped = self.calls[:-CALL_LOG_LIMIT]
+        if dropped:
+            self.calls = self.calls[-CALL_LOG_LIMIT:]
+            names = [r["photo"] for r in dropped if r["photo"]]
+            if names:
+                self.hass.async_add_executor_job(self._delete_photos, names)
+        # ponytail: 120 s hard stop; a call longer than that loses its late flags
+        self._call_deadline = async_call_later(self.hass, CALL_DEADLINE, self._deadline_over)
+        self._record_changed()
+
+    @callback
+    def _record_flag(self, field: str) -> None:
+        """Mark answered/door_opened on the open record, once."""
+        record = self._current_call
+        if record is None or record[field]:
+            return
+        record[field] = True
+        self._record_changed()
+
+    @callback
+    def _record_changed(self) -> None:
+        """Persist soon and tell the card now."""
+        if self._store:
+            self._store.async_delay_save(self._calls_to_save, 10)
+        self.hass.bus.async_fire(EVENT_CALL_LOG, {"host": self.host})
+
+    @callback
+    def _calls_to_save(self) -> dict:
+        return {"calls": self.calls}
+
+    @callback
+    def _grace_over(self, _now: Any) -> None:
+        self._call_grace = None
+        self._record_close()
+
+    @callback
+    def _deadline_over(self, _now: Any) -> None:
+        self._call_deadline = None
+        self._record_close()
+
+    @callback
+    def _record_close(self) -> None:
+        """Stop attributing anything to this call; the record itself stays."""
+        if self._call_grace:
+            self._call_grace()
+            self._call_grace = None
+        if self._call_deadline:
+            self._call_deadline()
+            self._call_deadline = None
+        self._current_call = None
+
+    def _delete_photos(self, filenames: list[str]) -> None:
+        directory = self.hass.config.path(MEDIA_DIRNAME, CALLS_DIRNAME)
+        for name in filenames:
+            try:
+                os.remove(os.path.join(directory, name))
+            except OSError:
+                pass
 
     @property
     def available(self) -> bool:
@@ -267,6 +379,7 @@ class IntercomHub:
     async def async_pick_up(self) -> None:
         self.picked_up = True
         self.view = VIEW_DOOR
+        self._record_flag("answered")
         self._changed()
 
     async def async_hang_up(self) -> None:
@@ -284,6 +397,7 @@ class IntercomHub:
     async def async_open_door(self) -> None:
         """Release the street door, whichever way it was asked for."""
         await self._command("/unlock", id="default")
+        self._record_flag("door_opened")
         persistent_notification.async_create(
             self.hass, "The street door was opened from Home Assistant.", title="Intercom"
         )
@@ -318,6 +432,7 @@ class IntercomHub:
 
     async def async_capture_photo(self) -> bytes | None:
         """Ask go2rtc for one frame of the door."""
+        record = self._current_call  # may close while we fetch; keep the reference
         frame = await self._frame()
         if frame is not None and len(frame) > PHOTO_MAX_BYTES:
             _LOGGER.debug("the frame looks like noise (%d bytes), trying once more", len(frame))
@@ -329,7 +444,11 @@ class IntercomHub:
             return None
 
         self.photo = frame
-        await self.hass.async_add_executor_job(self._write_photo, frame)
+        call_filename = f"{record['id']}.jpg" if record and record["photo"] is None else None
+        await self.hass.async_add_executor_job(self._write_photo, frame, call_filename)
+        if call_filename:
+            record["photo"] = call_filename
+            self._record_changed()
         self._changed()
         return frame
 
@@ -347,14 +466,15 @@ class IntercomHub:
             _LOGGER.debug("could not get a frame: %s", err)
             return None
 
-    def _write_photo(self, frame: bytes) -> None:
+    def _write_photo(self, frame: bytes, call_filename: str | None = None) -> None:
         """Also leave it where a phone can fetch it, at the address in PHOTO_URL."""
-        import os
-
         directory = self.hass.config.path(MEDIA_DIRNAME)
-        os.makedirs(directory, exist_ok=True)
-        final = os.path.join(directory, PHOTO_FILENAME)
-        partial = f"{final}.part"
-        with open(partial, "wb") as handle:
-            handle.write(frame)
-        os.replace(partial, final)
+        targets = [os.path.join(directory, PHOTO_FILENAME)]
+        if call_filename:
+            targets.append(os.path.join(directory, CALLS_DIRNAME, call_filename))
+        for final in targets:
+            os.makedirs(os.path.dirname(final), exist_ok=True)
+            partial = f"{final}.part"
+            with open(partial, "wb") as handle:
+                handle.write(frame)
+            os.replace(partial, final)

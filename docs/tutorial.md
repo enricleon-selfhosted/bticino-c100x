@@ -95,7 +95,7 @@ address, category **Integration**. Restart Home Assistant.
 Then Settings → Devices and services → Add integration → **Bticino Classe 100X**. It asks
 for the intercom's address, and for the MQTT topic, which is already filled in.
 
-That brings in the sensors, the buttons, the doorbell photo, the two dashboard cards and
+That brings in the sensors, the buttons, the doorbell photo, the three dashboard cards and
 the live video together. In **Developer tools → States** these exist:
 
 ```
@@ -167,6 +167,16 @@ tap_action:
 action makes no sense, and `done_on` / `done_off` end the pressed state when the intercom
 confirms. The services are `open_door`, `pick_up`, `hang_up`, `look` and `capture_photo`.
 
+The third card is the call history, like a phone's:
+
+```yaml
+type: custom:intercom-call-log
+```
+
+Every ring becomes an entry with its photo, answered or missed, and whether the door was
+opened; tapping one shows the photo full size. `title` and `limit` (default 10) are
+optional. The last 50 calls are kept, and the texts follow the Home Assistant language.
+
 ## 7. Make the notification
 
 The integration fires nothing at your phone by itself, because only you know which phone.
@@ -189,6 +199,8 @@ and the second replaces the first on the screen.
       message: "Someone is at the door"
       data:
         tag: doorbell
+        url: /lovelace/home#call
+        clickAction: /lovelace/home#call
         actions:
         - action: OPEN_DOOR
           title: Open the door
@@ -210,6 +222,8 @@ and the second replaces the first on the screen.
       message: "Someone is at the door"
       data:
         tag: doorbell
+        url: /lovelace/home#call
+        clickAction: /lovelace/home#call
         image: "/bticino_c100x/media/doorbell_last.jpg"
         attachment:
           url: "/bticino_c100x/media/doorbell_last.jpg"
@@ -223,7 +237,9 @@ An iPhone reads `attachment`, an Android phone `image`; each ignores the other. 
 path bare: the photo is served with caching disabled, so a cache-buster adds nothing —
 and the iOS app percent-encodes `?` in relative attachment paths, turning the query into
 a filename that 404s. Tapping **Open the door** opens it: the integration listens for
-the `OPEN_DOOR` action itself.
+the `OPEN_DOOR` action itself. `url` (iOS) and `clickAction` (Android) point at the
+dashboard that holds the call-log card; the `#call` at the end makes the card open the
+latest call's detail on arrival.
 
 ## What cutting the cloud does
 

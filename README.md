@@ -48,7 +48,7 @@ already filled in.
 
 ## Use
 
-The integration brings 19 entities, seven services and two dashboard cards. The cards
+The integration brings 19 entities, seven services and three dashboard cards. The cards
 register themselves as a dashboard resource; dashboards managed in YAML need it added
 by hand:
 
@@ -78,6 +78,15 @@ color: green
 tap_action:
   service: bticino_c100x.open_door
 ```
+
+```yaml
+type: custom:intercom-call-log
+```
+
+Every ring becomes an entry, like a phone's call history: the photo, answered or
+missed, and whether the door was opened. Tapping an entry shows the photo full size.
+`title` and `limit` (default 10) are optional; the last 50 calls are kept, and the
+texts follow the Home Assistant language.
 
 For a doorbell notification, trigger an automation on `binary_sensor.intercom_ringing`
 and send it to your phone. The photo is taken a few seconds into the ring, so send the

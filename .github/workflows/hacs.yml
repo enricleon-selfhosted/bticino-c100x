@@ -29,7 +29,7 @@ jobs:
 
       - name: The cards still register under their own names
         run: |
-          for card in intercom-button intercom-video; do
+          for card in intercom-button intercom-video intercom-call-log; do
             grep -q "customElements.define('$card'" "$CARDS" \
               || { echo "$card is no longer registered"; exit 1; }
             echo "  $card"

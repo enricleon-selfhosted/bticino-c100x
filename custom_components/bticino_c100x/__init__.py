@@ -8,12 +8,13 @@ from functools import partial
 
 import voluptuous as vol
 
+from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import config_validation as cv
 
-from .const import CONF_TOPIC, DEFAULT_TOPIC, DOMAIN, MEDIA_DIRNAME, MEDIA_URL
+from .const import CALLS_DIRNAME, CONF_TOPIC, DEFAULT_TOPIC, DOMAIN, MEDIA_DIRNAME, MEDIA_URL
 from .coordinator import IntercomHub
 from .webrtc import WebRTCSignallingView
 
@@ -40,6 +41,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hub = IntercomHub(
         hass, entry.data[CONF_HOST], entry.data.get(CONF_TOPIC, DEFAULT_TOPIC)
     )
+    await hub.async_load_calls(entry.entry_id)
     await hub.async_start()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = hub
@@ -67,6 +69,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_register_once(hass: HomeAssistant) -> None:
     """Register the cards and the signalling endpoint."""
     hass.http.register_view(WebRTCSignallingView)
+    websocket_api.async_register_command(hass, ws_calls)
 
     media = hass.config.path(MEDIA_DIRNAME)
     await hass.async_add_executor_job(partial(os.makedirs, media, exist_ok=True))
@@ -122,6 +125,35 @@ async def _async_register_card_resource(hass: HomeAssistant) -> bool:
     except Exception:
         _LOGGER.warning("Could not add the card to the dashboard resources", exc_info=True)
         return False
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/calls", vol.Optional("entry"): str}
+)
+@callback
+def ws_calls(hass: HomeAssistant, connection, msg: dict) -> None:
+    """The call history, newest first, with ready-to-use photo addresses."""
+    hubs = hass.data.get(DOMAIN, {})
+    hub = hubs.get(msg.get("entry")) or next(iter(hubs.values()), None)
+    if hub is None:
+        connection.send_error(msg["id"], "not_found", "no intercom is set up")
+        return
+    connection.send_result(
+        msg["id"],
+        {
+            "calls": [
+                {
+                    "id": r["id"],
+                    "ts": r["ts"],
+                    "answered": r["answered"],
+                    "door_opened": r["door_opened"],
+                    "photo_url": (
+                        f"{MEDIA_URL}/{CALLS_DIRNAME}/{r['photo']}" if r["photo"] else None
+                    ),
+                }
+                for r in reversed(hub.calls)
+            ]
+        },
+    )
 
 def _register_services(hass: HomeAssistant) -> None:
     """The things you can ask the intercom to do."""

@@ -424,3 +424,250 @@ class IntercomVideo extends HTMLElement {
 }
 customElements.define('intercom-video', IntercomVideo);
 window.customCards.push({ type: 'intercom-video', name: 'Intercom Video', description: 'The intercom video, with the loading centred' });
+
+const CALL_LOG_TEXT = {
+  en: { title: 'Call log', answered: 'Answered', missed: 'Missed',
+        opened: 'Door opened', not_opened: 'Door not opened',
+        today: 'Today', yesterday: 'Yesterday', empty: 'No calls yet' },
+  es: { title: 'Llamadas', answered: 'Contestada', missed: 'Perdida',
+        opened: 'Puerta abierta', not_opened: 'Puerta sin abrir',
+        today: 'Hoy', yesterday: 'Ayer', empty: 'Sin llamadas' },
+};
+
+// config: title, limit
+class IntercomCallLog extends HTMLElement {
+  setConfig(c) {
+    this._c = c || {};
+    if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host { display: block; }
+        .card {
+          box-sizing: border-box; overflow: hidden;
+          background: var(--ha-card-background, var(--card-background-color, #1c1c1c));
+          border-radius: var(--ha-card-border-radius, 12px);
+          border: var(--ha-card-border-width, 1px) solid
+                  var(--ha-card-border-color, var(--divider-color, rgba(127,127,127,.25)));
+          box-shadow: var(--ha-card-box-shadow, none);
+        }
+        .title {
+          padding: 14px 16px 6px; font-size: 15px; font-weight: 500;
+          color: var(--primary-text-color, #fff);
+        }
+        .row {
+          display: flex; align-items: center; gap: 12px; padding: 9px 16px;
+          cursor: pointer; -webkit-tap-highlight-color: transparent; user-select: none;
+          transition: background .12s ease;
+        }
+        .row + .row { border-top: 1px solid var(--divider-color, rgba(127,127,127,.2)); }
+        @media (hover: hover) { .row:hover { background: rgba(127,127,127,.08); } }
+        .thumb, .noface {
+          width: 44px; height: 44px; border-radius: 50%; flex: none;
+          object-fit: cover; background: rgba(127,127,127,.15);
+        }
+        .noface { display: flex; align-items: center; justify-content: center;
+                  color: var(--secondary-text-color, #9aa0a6); }
+        .noface ha-icon { --mdc-icon-size: 24px; }
+        .mid { flex: 1; min-width: 0; }
+        .status { display: flex; align-items: center; gap: 6px;
+                  font-size: 13.5px; font-weight: 500;
+                  color: var(--primary-text-color, #fff); }
+        .status ha-icon { --mdc-icon-size: 16px; color: #35c25e; }
+        .row.missed .status, .row.missed .status ha-icon { color: #ff5b60; }
+        .when { font-size: 12px; margin-top: 2px; color: var(--secondary-text-color, #9aa0a6); }
+        .side { display: flex; align-items: center; gap: 4px; flex: none;
+                color: var(--secondary-text-color, #9aa0a6); }
+        .side .door { color: #35c25e; --mdc-icon-size: 18px; }
+        .side .chev { --mdc-icon-size: 20px; opacity: .6; }
+        .empty { padding: 22px 16px; text-align: center; font-size: 13px;
+                 color: var(--secondary-text-color, #9aa0a6); }
+
+        .overlay { position: fixed; inset: 0; z-index: 999;
+                   background: rgba(0,0,0,.6); display: flex;
+                   align-items: center; justify-content: center; padding: 16px; }
+        .panel { position: relative; width: min(92vw, 480px); max-height: 90vh;
+                 overflow: auto; border-radius: var(--ha-card-border-radius, 12px);
+                 background: var(--ha-card-background, var(--card-background-color, #1c1c1c)); }
+        .panel img { display: block; width: 100%; max-height: 70vh;
+                     object-fit: contain; background: #000; }
+        .panel .noimg { display: flex; align-items: center; justify-content: center;
+                        height: 200px; background: rgba(127,127,127,.12);
+                        color: var(--secondary-text-color, #9aa0a6); }
+        .panel .noimg ha-icon { --mdc-icon-size: 72px; }
+        .close { position: absolute; top: 10px; right: 10px; z-index: 1;
+                 width: 36px; height: 36px; border: 0; border-radius: 50%;
+                 background: rgba(0,0,0,.55); color: #fff; cursor: pointer;
+                 display: flex; align-items: center; justify-content: center; }
+        .close ha-icon { --mdc-icon-size: 22px; }
+        .facts { padding: 14px 18px 18px; }
+        .fact { display: flex; align-items: center; gap: 10px; padding: 6px 0;
+                font-size: 14px; color: var(--primary-text-color, #fff); }
+        .fact ha-icon { --mdc-icon-size: 19px; color: var(--secondary-text-color, #9aa0a6); }
+        .fact.good ha-icon { color: #35c25e; }
+        .fact.bad, .fact.bad ha-icon { color: #ff5b60; }
+      </style>
+      <div class="card"><div class="title"></div><div class="rows"></div></div>
+      <div class="overlay" hidden>
+        <div class="panel">
+          <button class="close" aria-label="close"><ha-icon icon="mdi:close"></ha-icon></button>
+          <img hidden><div class="noimg" hidden><ha-icon icon="mdi:account"></ha-icon></div>
+          <div class="facts"></div>
+        </div>
+      </div>`;
+    this._rows = this.shadowRoot.querySelector('.rows');
+    this._overlay = this.shadowRoot.querySelector('.overlay');
+    this._overlay.onclick = (e) => { if (e.target === this._overlay) this._closeDetail(); };
+    this.shadowRoot.querySelector('.close').onclick = () => this._closeDetail();
+    this._onKey = (e) => { if (e.key === 'Escape') this._closeDetail(); };
+    if (this._calls) this._render();
+  }
+
+  set hass(h) {
+    const first = !this._hass;
+    this._hass = h;
+    if (first) {
+      const lang = (h.language || 'en').split('-')[0];
+      this._t = CALL_LOG_TEXT[lang] || CALL_LOG_TEXT.en;
+      this._lang = h.language || 'en';
+      this._start();
+    }
+    // no render here: the card reads no entity state, so the hass churn is noise
+  }
+
+  async _start() {
+    if (this._startedOnce) return;
+    this._startedOnce = true;
+    await this._fetch();
+    this._deepLink();
+    this._onHash = () => this._deepLink();
+    window.addEventListener('hashchange', this._onHash);
+    this._subscribe();
+  }
+
+  async _fetch() {
+    if (!this._hass) return;
+    try {
+      const resp = await this._hass.callWS({ type: 'bticino_c100x/calls' });
+      this._calls = resp.calls;
+      this._render();
+    } catch (e) { /* not loaded yet; the event subscription retries us */ }
+  }
+
+  async _subscribe() {
+    if (this._unsub || !this._hass) return;
+    this._unsub = await this._hass.connection.subscribeEvents(
+      () => this._fetch(), 'bticino_c100x_call_log_updated');
+    if (!this.isConnected) { this._unsub(); this._unsub = null; }
+  }
+
+  _render() {
+    if (!this._rows) return;
+    this.shadowRoot.querySelector('.title').textContent = this._c.title || (this._t && this._t.title) || '';
+    this._rows.textContent = '';
+    const list = (this._calls || []).slice(0, this._c.limit || 10);
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = (this._t && this._t.empty) || '';
+      this._rows.appendChild(empty);
+      return;
+    }
+    for (const call of list) this._rows.appendChild(this._row(call));
+  }
+
+  _row(call) {
+    const row = document.createElement('div');
+    row.className = call.answered ? 'row' : 'row missed';
+    if (call.photo_url) {
+      const img = document.createElement('img');
+      img.className = 'thumb'; img.loading = 'lazy'; img.src = call.photo_url;
+      row.appendChild(img);
+    } else {
+      const face = document.createElement('div');
+      face.className = 'noface';
+      face.innerHTML = '<ha-icon icon="mdi:account"></ha-icon>';
+      row.appendChild(face);
+    }
+    const mid = document.createElement('div'); mid.className = 'mid';
+    const status = document.createElement('div'); status.className = 'status';
+    const icon = document.createElement('ha-icon');
+    icon.setAttribute('icon', call.answered ? 'mdi:phone-incoming' : 'mdi:phone-missed');
+    status.appendChild(icon);
+    status.appendChild(document.createTextNode(call.answered ? this._t.answered : this._t.missed));
+    const when = document.createElement('div'); when.className = 'when';
+    when.textContent = this._when(call.ts);
+    mid.appendChild(status); mid.appendChild(when);
+    row.appendChild(mid);
+    const side = document.createElement('div'); side.className = 'side';
+    if (call.door_opened) {
+      const door = document.createElement('ha-icon');
+      door.className = 'door'; door.setAttribute('icon', 'mdi:door-open');
+      side.appendChild(door);
+    }
+    const chev = document.createElement('ha-icon');
+    chev.className = 'chev'; chev.setAttribute('icon', 'mdi:chevron-right');
+    side.appendChild(chev);
+    row.appendChild(side);
+    row.onclick = () => this._openDetail(call);
+    return row;
+  }
+
+  _when(ts) {
+    const d = new Date(ts);
+    const time = d.toLocaleTimeString(this._lang, { hour: '2-digit', minute: '2-digit' });
+    const today = new Date();
+    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+    if (d.toDateString() === today.toDateString()) return `${this._t.today} ${time}`;
+    if (d.toDateString() === yesterday.toDateString()) return `${this._t.yesterday} ${time}`;
+    return `${d.toLocaleDateString(this._lang, { day: 'numeric', month: 'short' })} ${time}`;
+  }
+
+  _openDetail(call) {
+    const img = this.shadowRoot.querySelector('.panel img');
+    const noimg = this.shadowRoot.querySelector('.panel .noimg');
+    img.hidden = !call.photo_url;
+    noimg.hidden = !!call.photo_url;
+    if (call.photo_url) img.src = call.photo_url;
+    const facts = this.shadowRoot.querySelector('.facts');
+    facts.textContent = '';
+    const fact = (iconName, text, cls) => {
+      const el = document.createElement('div');
+      el.className = cls ? `fact ${cls}` : 'fact';
+      const ic = document.createElement('ha-icon'); ic.setAttribute('icon', iconName);
+      el.appendChild(ic); el.appendChild(document.createTextNode(text));
+      facts.appendChild(el);
+    };
+    const d = new Date(call.ts);
+    fact('mdi:calendar-clock', d.toLocaleString(this._lang,
+      { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }));
+    fact(call.answered ? 'mdi:phone-incoming' : 'mdi:phone-missed',
+      call.answered ? this._t.answered : this._t.missed, call.answered ? 'good' : 'bad');
+    fact(call.door_opened ? 'mdi:door-open' : 'mdi:door-closed',
+      call.door_opened ? this._t.opened : this._t.not_opened, call.door_opened ? 'good' : '');
+    this._overlay.hidden = false;
+    window.addEventListener('keydown', this._onKey);
+  }
+
+  _closeDetail() {
+    if (this._overlay) this._overlay.hidden = true;
+    window.removeEventListener('keydown', this._onKey);
+  }
+
+  _deepLink() {
+    if (window.location.hash !== '#call' || !this._calls || !this._calls.length) return;
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    this._openDetail(this._calls[0]);
+  }
+
+  connectedCallback() {
+    if (this._hass && this._startedOnce && !this._unsub) { this._fetch(); this._subscribe(); }
+  }
+  disconnectedCallback() {
+    if (this._unsub) { this._unsub(); this._unsub = null; }
+    if (this._onHash) window.removeEventListener('hashchange', this._onHash);
+    this._closeDetail();
+  }
+  getCardSize() { return Math.min((this._c && this._c.limit) || 10, 10); }
+}
+customElements.define('intercom-call-log', IntercomCallLog);
+window.customCards.push({ type: 'intercom-call-log', name: 'Intercom Call Log', description: 'The rings at the door, like a phone\'s call history' });
