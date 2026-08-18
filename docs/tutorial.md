@@ -174,8 +174,9 @@ type: custom:intercom-call-log
 ```
 
 Every ring becomes an entry with its photo, answered or missed, and whether the door was
-opened; tapping one shows the photo full size. `title` and `limit` (default 10) are
-optional. The last 50 calls are kept, and the texts follow the Home Assistant language.
+opened; tapping one shows the photo full size. `limit` (default 10) is optional. The
+last 50 calls are kept, the texts follow the Home Assistant language, and a heading is
+yours to add like on any other card.
 
 ## 7. Make the notification
 

@@ -85,8 +85,8 @@ type: custom:intercom-call-log
 
 Every ring becomes an entry, like a phone's call history: the photo, answered or
 missed, and whether the door was opened. Tapping an entry shows the photo full size.
-`title` and `limit` (default 10) are optional; the last 50 calls are kept, and the
-texts follow the Home Assistant language.
+`limit` (default 10) is optional; the last 50 calls are kept, the texts follow the
+Home Assistant language, and a heading is yours to add like on any other card.
 
 For a doorbell notification, trigger an automation on `binary_sensor.intercom_ringing`
 and send it to your phone. The photo is taken a few seconds into the ring, so send the

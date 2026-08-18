@@ -426,18 +426,18 @@ customElements.define('intercom-video', IntercomVideo);
 window.customCards.push({ type: 'intercom-video', name: 'Intercom Video', description: 'The intercom video, with the loading centred' });
 
 const CALL_LOG_TEXT = {
-  en: { title: 'Call log', answered: 'Answered', missed: 'Missed',
+  en: { answered: 'Answered', missed: 'Missed',
         opened: 'Door opened', not_opened: 'Door not opened',
         today: 'Today', yesterday: 'Yesterday', empty: 'No calls yet' },
-  es: { title: 'Llamadas', answered: 'Contestada', missed: 'Perdida',
+  es: { answered: 'Contestada', missed: 'Perdida',
         opened: 'Puerta abierta', not_opened: 'Puerta sin abrir',
         today: 'Hoy', yesterday: 'Ayer', empty: 'Sin llamadas' },
-  ca: { title: 'Trucades', answered: 'Contestada', missed: 'Perduda',
+  ca: { answered: 'Contestada', missed: 'Perduda',
         opened: 'Porta oberta', not_opened: 'Porta sense obrir',
         today: 'Avui', yesterday: 'Ahir', empty: 'Encara no hi ha trucades' },
 };
 
-// config: title, limit
+// config: limit
 class IntercomCallLog extends HTMLElement {
   setConfig(c) {
     this._c = c || {};
@@ -453,10 +453,6 @@ class IntercomCallLog extends HTMLElement {
           border: var(--ha-card-border-width, 1px) solid
                   var(--ha-card-border-color, var(--divider-color, rgba(127,127,127,.25)));
           box-shadow: var(--ha-card-box-shadow, none);
-        }
-        .title {
-          padding: 14px 16px 6px; font-size: 15px; font-weight: 500;
-          color: var(--primary-text-color, #fff);
         }
         .row {
           display: flex; align-items: center; gap: 12px; padding: 9px 16px;
@@ -479,9 +475,10 @@ class IntercomCallLog extends HTMLElement {
         .status ha-icon { --mdc-icon-size: 16px; color: #35c25e; }
         .row.missed .status, .row.missed .status ha-icon { color: #ff5b60; }
         .when { font-size: 12px; margin-top: 2px; color: var(--secondary-text-color, #9aa0a6); }
-        .side { display: flex; align-items: center; gap: 4px; flex: none;
+        .side { display: flex; align-items: center; gap: 6px; flex: none;
                 color: var(--secondary-text-color, #9aa0a6); }
         .side .door { color: #35c25e; --mdc-icon-size: 18px; }
+        .side .door-off { --mdc-icon-size: 18px; opacity: .35; }
         .side .chev { --mdc-icon-size: 20px; opacity: .6; }
         .empty { padding: 22px 16px; text-align: center; font-size: 13px;
                  color: var(--secondary-text-color, #9aa0a6); }
@@ -510,7 +507,7 @@ class IntercomCallLog extends HTMLElement {
         .fact.good ha-icon { color: #35c25e; }
         .fact.bad, .fact.bad ha-icon { color: #ff5b60; }
       </style>
-      <div class="card"><div class="title"></div><div class="rows"></div></div>
+      <div class="card"><div class="rows"></div></div>
       <div class="overlay" hidden>
         <div class="panel">
           <button class="close" aria-label="close"><ha-icon icon="mdi:close"></ha-icon></button>
@@ -566,7 +563,6 @@ class IntercomCallLog extends HTMLElement {
 
   _render() {
     if (!this._rows) return;
-    this.shadowRoot.querySelector('.title').textContent = this._c.title || (this._t && this._t.title) || '';
     this._rows.textContent = '';
     const list = (this._calls || []).slice(0, this._c.limit || 10);
     if (!list.length) {
@@ -603,11 +599,11 @@ class IntercomCallLog extends HTMLElement {
     mid.appendChild(status); mid.appendChild(when);
     row.appendChild(mid);
     const side = document.createElement('div'); side.className = 'side';
-    if (call.door_opened) {
-      const door = document.createElement('ha-icon');
-      door.className = 'door'; door.setAttribute('icon', 'mdi:door-open');
-      side.appendChild(door);
-    }
+    const door = document.createElement('ha-icon');
+    door.className = call.door_opened ? 'door' : 'door-off';
+    door.setAttribute('icon', call.door_opened ? 'mdi:door-open' : 'mdi:door-closed');
+    door.setAttribute('title', call.door_opened ? this._t.opened : this._t.not_opened);
+    side.appendChild(door);
     const chev = document.createElement('ha-icon');
     chev.className = 'chev'; chev.setAttribute('icon', 'mdi:chevron-right');
     side.appendChild(chev);
