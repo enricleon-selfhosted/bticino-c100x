@@ -85,8 +85,10 @@ type: custom:intercom-call-log
 
 Every ring becomes an entry, like a phone's call history: the photo, answered or
 missed, and whether the door was opened. Tapping an entry shows the photo full size.
-`limit` (default 10) is optional; the last 50 calls are kept, dates follow the
-instance's language, and a heading is yours to add like on any other card.
+`limit` (default 10) is optional; the last 50 calls are kept, and a heading is yours
+to add like on any other card. The texts follow the instance's language the way the
+big HACS cards do it — a dictionary in the card (English, Spanish, Catalan) picked by
+the language setting, English as the fallback.
 
 For a doorbell notification, trigger an automation on `binary_sensor.intercom_ringing`
 and send it to your phone. The photo is taken a few seconds into the ring, so send the

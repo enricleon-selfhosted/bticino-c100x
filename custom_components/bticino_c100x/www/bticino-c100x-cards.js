@@ -425,12 +425,19 @@ class IntercomVideo extends HTMLElement {
 customElements.define('intercom-video', IntercomVideo);
 window.customCards.push({ type: 'intercom-video', name: 'Intercom Video', description: 'The intercom video, with the loading centred' });
 
-// The labels are English like everything else here; only the date and time
-// formats follow the instance's language.
+// Cards have no official translation channel, so like the big HACS cards
+// (mini-media-player, Mushroom) the dictionary ships in the card and the
+// instance's language setting picks the entry. English is the fallback.
 const CALL_LOG_TEXT = {
-  answered: 'Answered', missed: 'Missed',
-  opened: 'Door opened', not_opened: 'Door not opened',
-  today: 'Today', yesterday: 'Yesterday', empty: 'No calls yet',
+  en: { answered: 'Answered', missed: 'Missed',
+        opened: 'Door opened', not_opened: 'Door not opened',
+        today: 'Today', yesterday: 'Yesterday', empty: 'No calls yet' },
+  es: { answered: 'Contestada', missed: 'Perdida',
+        opened: 'Puerta abierta', not_opened: 'Puerta sin abrir',
+        today: 'Hoy', yesterday: 'Ayer', empty: 'Sin llamadas' },
+  ca: { answered: 'Contestada', missed: 'Perduda',
+        opened: 'Porta oberta', not_opened: 'Porta sense obrir',
+        today: 'Avui', yesterday: 'Ahir', empty: 'Encara no hi ha trucades' },
 };
 
 // config: limit
@@ -523,8 +530,8 @@ class IntercomCallLog extends HTMLElement {
     const first = !this._hass;
     this._hass = h;
     if (first) {
-      this._t = CALL_LOG_TEXT;
-      this._lang = h.language || 'en';
+      this._lang = h.selectedLanguage || h.language || 'en';
+      this._t = CALL_LOG_TEXT[this._lang.split('-')[0]] || CALL_LOG_TEXT.en;
       this._start();
     }
     // no render here: the card reads no entity state, so the hass churn is noise
@@ -563,7 +570,7 @@ class IntercomCallLog extends HTMLElement {
     if (!list.length) {
       const empty = document.createElement('div');
       empty.className = 'empty';
-      empty.textContent = CALL_LOG_TEXT.empty;
+      empty.textContent = (this._t || CALL_LOG_TEXT.en).empty;
       this._rows.appendChild(empty);
       return;
     }

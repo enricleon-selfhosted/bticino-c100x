@@ -175,8 +175,9 @@ type: custom:intercom-call-log
 
 Every ring becomes an entry with its photo, answered or missed, and whether the door was
 opened; tapping one shows the photo full size. `limit` (default 10) is optional. The
-last 50 calls are kept, dates follow the instance's language, and a heading is yours
-to add like on any other card.
+last 50 calls are kept, and a heading is yours to add like on any other card. Texts
+follow the instance's language (English, Spanish and Catalan shipped, English the
+fallback) — a bundled dictionary, the same way the established HACS cards do it.
 
 ## 7. Make the notification
 
