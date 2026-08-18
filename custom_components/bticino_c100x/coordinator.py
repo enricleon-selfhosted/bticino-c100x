@@ -24,7 +24,6 @@ from .const import (
     BUS_IDLE,
     BUS_RING_STATES,
     BUS_STAIRCASE_LIGHT,
-    BUS_TALK,
     CALL_DEADLINE,
     CALL_GRACE,
     CALL_LOG_LIMIT,
@@ -132,8 +131,6 @@ class IntercomHub:
 
         if self.bus_state in BUS_RING_STATES:
             self._ring_started()
-        if self.bus_state == BUS_TALK:
-            self._record_flag("answered")  # a handset answered, wherever it hangs
         if was_in_call and not self.call_in_progress:
             self._call_ended()
         self._changed()

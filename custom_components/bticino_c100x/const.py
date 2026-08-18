@@ -17,7 +17,8 @@ STATUS_TIMEOUT = 210  # three missed 60s health reports
 # bus states: 0 idle, 1/2 ring, 3 video, 4 connected, 6 talk
 BUS_IDLE = "0"
 BUS_RING_STATES = ("2", "4")  # 2 only ever follows a press
-BUS_TALK = "6"  # somebody picked up, on a phone or on the wall unit
+# state 6 also shows up in plain video sessions (our own photo grab included),
+# so it cannot mean "a handset answered" — answered is tracked from HA only
 
 BUS_DOOR_OPENED = "*8*19*"  # prefix of a door-release frame on the riser
 

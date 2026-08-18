@@ -432,6 +432,9 @@ const CALL_LOG_TEXT = {
   es: { title: 'Llamadas', answered: 'Contestada', missed: 'Perdida',
         opened: 'Puerta abierta', not_opened: 'Puerta sin abrir',
         today: 'Hoy', yesterday: 'Ayer', empty: 'Sin llamadas' },
+  ca: { title: 'Trucades', answered: 'Contestada', missed: 'Perduda',
+        opened: 'Porta oberta', not_opened: 'Porta sense obrir',
+        today: 'Avui', yesterday: 'Ahir', empty: 'Encara no hi ha trucades' },
 };
 
 // config: title, limit
